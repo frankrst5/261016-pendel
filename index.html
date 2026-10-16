@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pendel">
+<meta name="theme-color" content="#111418">
+<title>Pendel Knivsta</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="preconnect" href="https://api.trafikinfo.trafikverket.se" crossorigin>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--fg:#14171c;--mute:#6b7280;--line:#e3e5e9;--acc:#0a66d6;--late:#d9480f;--bad:#c62828;--ok:#1b8a3a;--trk:#14171c;--trkfg:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1013;--card:#181b20;--fg:#eef0f3;--mute:#8b93a1;--line:#272b33;--acc:#5aa2ff;--late:#ff8a3d;--bad:#ff5c5c;--ok:#4cc46d;--trk:#eef0f3;--trkfg:#0e1013}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;-webkit-text-size-adjust:100%}
+body{padding:calc(env(safe-area-inset-top) + 8px) 12px calc(env(safe-area-inset-bottom) + 16px)}
+header{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+h1{font-size:19px;margin:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+button{font:inherit;color:inherit;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:7px 10px;cursor:pointer}
+button:active{opacity:.6}
+.meta{font-size:12px;color:var(--mute);display:flex;justify-content:space-between;gap:8px;margin:0 2px 8px}
+.card{background:var(--card);border-radius:12px;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line)}
+.card.first{border-color:var(--acc)}
+.card.cx{opacity:.75}
+.card.cx .t{text-decoration:line-through}
+.r1{display:flex;align-items:baseline;gap:6px}
+.t{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+.new{font-size:22px;font-weight:700;color:var(--late);font-variant-numeric:tabular-nums}
+.old{margin-left:4px;text-decoration:line-through;color:var(--mute);font-weight:500;font-size:16px}
+.arr{font-size:16px;font-variant-numeric:tabular-nums}
+.arr .new{font-size:16px}
+.dur{font-size:12px;color:var(--mute)}
+.trk{margin-left:auto;align-self:center;background:var(--trk);color:var(--trkfg);border-radius:7px;padding:2px 8px;font-weight:700;font-size:15px;min-width:34px;text-align:center}
+.trk small{font-weight:500;font-size:10px;display:block;line-height:1;opacity:.8}
+.r2{font-size:13px;color:var(--mute);margin-top:2px}
+.r2 b{color:var(--fg);font-weight:600}
+.in{color:var(--acc);font-weight:700}
+.dev{color:var(--bad);font-size:13px;font-weight:600;margin-top:3px}
+.info{color:var(--late);font-size:12.5px;margin-top:3px}
+.pos{font-size:12.5px;margin-top:3px;color:var(--fg)}
+.pos::before{content:"● ";color:var(--ok)}
+details{margin-top:4px}
+summary{font-size:12.5px;color:var(--acc);cursor:pointer;list-style:none}
+summary::-webkit-details-marker{display:none}
+ol.stops{list-style:none;margin:6px 0 0;padding:0;font-size:13px;border-left:2px solid var(--line);margin-left:4px}
+ol.stops li{display:flex;gap:8px;padding:2px 0 2px 10px;position:relative}
+ol.stops li::before{content:"";position:absolute;left:-5px;top:8px;width:8px;height:8px;border-radius:50%;background:var(--card);border:2px solid var(--mute)}
+ol.stops li.done::before{background:var(--ok);border-color:var(--ok)}
+ol.stops li.end{font-weight:700}
+ol.stops .n{flex:1}
+ol.stops .tm{font-variant-numeric:tabular-nums;white-space:nowrap}
+ol.stops .g{color:var(--mute);font-size:11.5px;min-width:42px;text-align:right}
+.msg{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;font-size:14px}
+.msg.err{border-color:var(--bad)}
+#settings{display:none}
+#settings.open{display:block}
+#settings label{display:block;font-size:13px;margin:8px 0 4px}
+#settings input[type=text]{width:100%;font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
+.row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.chk{display:flex!important;gap:8px;align-items:center}
+.seg{display:flex;gap:6px;margin-bottom:8px}
+.seg button{flex:1;padding:6px;font-size:13px}
+.seg button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+a{color:var(--acc)}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Pendel</h1>
+  <button id="btnRefresh" aria-label="Aktualisieren">↻</button>
+  <button id="btnSettings" aria-label="Einstellungen">⚙︎</button>
+</header>
+<div class="seg" id="seg">
+  <button data-d="auto">📍 Auto</button>
+  <button data-d="toKn">Sthlm → Knivsta</button>
+  <button data-d="toSt">Knivsta → Sthlm</button>
+</div>
+<div class="meta"><span id="loc"></span><span id="upd"></span></div>
+<div id="settings" class="msg">
+  <b>Einstellungen</b>
+  <label for="key">Trafikverket API-Schlüssel</label>
+  <input id="key" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="z. B. 0123abcd…">
+  <div style="font-size:12px;color:var(--mute);margin-top:4px">Kostenlos unter <a href="https://data.trafikverket.se/" target="_blank" rel="noopener">data.trafikverket.se</a> (Konto anlegen → API-Nyckel). Wird nur auf diesem Gerät gespeichert.</div>
+  <label class="chk"><input id="city" type="checkbox"> Pendeltåg über Stockholm City einbeziehen</label>
+  <div class="row"><button id="btnSave">Speichern</button></div>
+</div>
+<main id="list"></main>
+
+<script>
+'use strict';
+const API = 'https://api.trafikinfo.trafikverket.se/v2/data.json';
+const KNIVSTA = {lat: 59.7258, lon: 17.7866}, STHLM = {lat: 59.3307, lon: 18.0586};
+const KNIVSTA_RADIUS_KM = 18;            // Knivsta inkl. Vassunda, Alsike
+const MAX_TRAINS = 8;
+const FALLBACK_NAMES = {Cst: 'Stockholm C', Sci: 'Stockholm City', Kn: 'Knivsta', U: 'Uppsala C'};
+
+const $ = s => document.querySelector(s);
+const ls = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+
+const state = {
+  key: ls.get('key', ''),
+  city: ls.get('city', true),
+  mode: ls.get('mode', 'auto'),          // auto | toKn | toSt
+  autoDir: ls.get('autoDir', 'toSt'),
+  locText: '',
+  schema: ls.get('schema', '2.0'),
+  names: ls.get('names', null),
+  data: null, busy: false, open: new Set()
+};
+
+const dir = () => state.mode === 'auto' ? state.autoDir : state.mode;
+const sthlmSigs = () => state.city ? ['Cst', 'Sci'] : ['Cst'];
+function route(d = dir()) {
+  return d === 'toKn' ? {from: sthlmSigs(), to: ['Kn'], title: 'Stockholm → Knivsta'}
+                      : {from: ['Kn'], to: sthlmSigs(), title: 'Knivsta → Stockholm'};
+}
+const name = s => (state.names && state.names[s]) || FALLBACK_NAMES[s] || s;
+
+// ---------- API ----------
+function queryXml(objecttype, filter, extra = '') {
+  const sch = objecttype === 'TrainStation' ? 'namespace="rail.infrastructure" schemaversion="1.5"'
+    : state.schema === '2.0' ? 'namespace="rail.trafficinfo" schemaversion="2.0"' : 'schemaversion="1.9"';
+  return `<QUERY objecttype="${objecttype}" ${sch} ${extra}><FILTER>${filter}</FILTER></QUERY>`;
+}
+async function post(queries) {
+  const body = `<REQUEST><LOGIN authenticationkey="${esc(state.key)}"/>${queries.join('')}</REQUEST>`;
+  const r = await fetch(API, {method: 'POST', headers: {'Content-Type': 'text/xml'}, body});
+  let j = null;
+  try { j = await r.json(); } catch {}
+  const res = j && j.RESPONSE && j.RESPONSE.RESULT;
+  const err = res && res.find(x => x.ERROR);
+  if (!r.ok || err || !res) {
+    const m = err ? (err.ERROR.MESSAGE || err.ERROR.SOURCE) : `HTTP ${r.status}`;
+    const e = new Error(m); e.status = r.status; throw e;
+  }
+  return res;
+}
+async function postTA(queries) {
+  try { return await post(queries()); }
+  catch (e) {
+    if (e.status === 401 || /auth/i.test(e.message)) throw e;
+    // Fallback auf ältere Schema-Version
+    state.schema = state.schema === '2.0' ? '1.9' : '2.0';
+    const r = await post(queries());
+    ls.set('schema', state.schema);
+    return r;
+  }
+}
+
+const eq = (n, v) => `<EQ name="${n}" value="${v}"/>`;
+const anyOf = (n, vs) => vs.length === 1 ? eq(n, vs[0]) : `<OR>${vs.map(v => eq(n, v)).join('')}</OR>`;
+
+async function loadNames() {
+  if (state.names && ls.get('namesTs', 0) > Date.now() - 30 * 864e5) return;
+  try {
+    const res = await post([queryXml('TrainStation', eq('Advertised', 'true'))]);
+    const m = {};
+    for (const s of res[0].TrainStation || []) m[s.LocationSignature] = s.AdvertisedShortLocationName || s.AdvertisedLocationName;
+    state.names = m; ls.set('names', m); ls.set('namesTs', Date.now());
+  } catch {}
+}
+
+async function loadTrains(d) {
+  const rt = route(d);
+  const res = await postTA(() => [
+    queryXml('TrainAnnouncement', `<AND>${eq('ActivityType', 'Avgang')}${eq('Advertised', 'true')}${anyOf('LocationSignature', rt.from)}<GT name="AdvertisedTimeAtLocation" value="$dateadd(-00:15:00)"/><LT name="AdvertisedTimeAtLocation" value="$dateadd(03:00:00)"/></AND>`, 'orderby="AdvertisedTimeAtLocation"'),
+    queryXml('TrainAnnouncement', `<AND>${eq('ActivityType', 'Ankomst')}${eq('Advertised', 'true')}${anyOf('LocationSignature', rt.to)}<GT name="AdvertisedTimeAtLocation" value="$dateadd(-00:15:00)"/><LT name="AdvertisedTimeAtLocation" value="$dateadd(04:30:00)"/></AND>`, 'orderby="AdvertisedTimeAtLocation"')
+  ]);
+  const deps = res[0].TrainAnnouncement || [], arrs = res[1].TrainAnnouncement || [];
+  const now = Date.now();
+  const out = [];
+  for (const dp of deps) {
+    if (dp.TimeAtLocation && new Date(dp.TimeAtLocation) < now - 30e3) continue;      // schon abgefahren
+    const tDep = new Date(dp.AdvertisedTimeAtLocation);
+    if (!dp.EstimatedTimeAtLocation && !dp.Canceled && tDep < now - 60e3) continue;   // planmäßig vorbei, keine Prognose
+    const ar = arrs.find(a => a.AdvertisedTrainIdent === dp.AdvertisedTrainIdent && sameRun(a, dp) &&
+      new Date(a.AdvertisedTimeAtLocation) > tDep && new Date(a.AdvertisedTimeAtLocation) - tDep < 3 * 3600e3);
+    if (!ar) continue;
+    out.push({id: dp.AdvertisedTrainIdent + '|' + dp.AdvertisedTimeAtLocation, dep: dp, arr: ar, stops: null});
+    if (out.length >= MAX_TRAINS) break;
+  }
+  return {dir: d, trains: out, ts: Date.now()};
+}
+const runDay = a => (a.ScheduledDepartureDateTime || '').slice(0, 10);
+const sameRun = (a, b) => !runDay(a) || !runDay(b) || runDay(a) === runDay(b);
+
+async function loadStops(data) {
+  if (!data.trains.length) return;
+  const parts = data.trains.map(t => {
+    const t0 = new Date(t.dep.AdvertisedTimeAtLocation);
+    const a = new Date(t0 - 4 * 3600e3).toISOString(), b = new Date(+t0 + 4 * 3600e3).toISOString();
+    return `<AND>${eq('AdvertisedTrainIdent', t.dep.AdvertisedTrainIdent)}<GT name="AdvertisedTimeAtLocation" value="${a}"/><LT name="AdvertisedTimeAtLocation" value="${b}"/></AND>`;
+  });
+  const res = await postTA(() => [queryXml('TrainAnnouncement', `<AND>${eq('Advertised', 'true')}<OR>${parts.join('')}</OR></AND>`, 'orderby="AdvertisedTimeAtLocation"')]);
+  const all = res[0].TrainAnnouncement || [];
+  for (const t of data.trains) {
+    const anns = all.filter(a => a.AdvertisedTrainIdent === t.dep.AdvertisedTrainIdent && sameRun(a, t.dep));
+    const bySig = new Map();
+    for (const a of anns) {
+      let s = bySig.get(a.LocationSignature);
+      if (!s) bySig.set(a.LocationSignature, s = {sig: a.LocationSignature});
+      s[a.ActivityType === 'Ankomst' ? 'arr' : 'dep'] = a;
+    }
+    const full = [...bySig.values()].sort((x, y) => new Date((x.arr || x.dep).AdvertisedTimeAtLocation) - new Date((y.arr || y.dep).AdvertisedTimeAtLocation));
+    const i0 = full.findIndex(s => s.sig === t.dep.LocationSignature), i1 = full.findIndex(s => s.sig === t.arr.LocationSignature);
+    t.stops = i0 >= 0 && i1 > i0 ? full.slice(i0, i1 + 1) : [];
+    // letzte gemeldete Position des Zuges
+    let last = null;
+    for (const s of full) for (const a of [s.arr, s.dep]) if (a && a.TimeAtLocation && (!last || new Date(a.TimeAtLocation) >= new Date(last.TimeAtLocation))) last = a;
+    t.last = last;
+    t.origin = full[0] && full[0].sig;
+  }
+}
+
+// ---------- Darstellung ----------
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const hm = d => new Date(d).toLocaleTimeString('sv-SE', {hour: '2-digit', minute: '2-digit'});
+const txt = v => !v ? [] : (Array.isArray(v) ? v : [v]).map(x => typeof x === 'string' ? x : (x.Description || x.Code || '')).filter(Boolean);
+const delayMin = a => {
+  const r = a.TimeAtLocation || a.EstimatedTimeAtLocation;
+  return r ? Math.round((new Date(r) - new Date(a.AdvertisedTimeAtLocation)) / 60e3) : 0;
+};
+function timeHtml(a, cls = 't') {
+  const real = a.TimeAtLocation || a.EstimatedTimeAtLocation;
+  if (real && hm(real) !== hm(a.AdvertisedTimeAtLocation))
+    return `<span class="new">${hm(real)}</span><span class="old">${hm(a.AdvertisedTimeAtLocation)}</span>`;
+  return `<span class="${cls}">${hm(a.AdvertisedTimeAtLocation)}</span>`;
+}
+function stopTime(a) {
+  if (!a) return '';
+  const d = delayMin(a), real = a.TimeAtLocation || a.EstimatedTimeAtLocation;
+  return hm(a.AdvertisedTimeAtLocation) + (real && d ? ` <span style="color:var(--late)">${d > 0 ? '+' : ''}${d}</span>` : '');
+}
+function relIn(a) {
+  const m = Math.round((new Date(a.EstimatedTimeAtLocation || a.AdvertisedTimeAtLocation) - Date.now()) / 60e3);
+  return m <= 0 ? 'jetzt' : m < 60 ? `in ${m} min` : `in ${Math.floor(m / 60)} h ${m % 60} min`;
+}
+
+function card(t, i) {
+  const {dep, arr} = t;
+  const cx = dep.Canceled || arr.Canceled;
+  const realDep = dep.EstimatedTimeAtLocation || dep.AdvertisedTimeAtLocation, realArr = arr.EstimatedTimeAtLocation || arr.AdvertisedTimeAtLocation;
+  const dur = Math.round((new Date(realArr) - new Date(realDep)) / 60e3);
+  const prod = txt(dep.ProductInformation).join(' ');
+  const op = dep.Operator || dep.InformationOwner || '';
+  const dest = txt(dep.ToLocation && dep.ToLocation.map(l => name(l.LocationName))).join(', ');
+  const devs = [...new Set([...txt(dep.Deviation), ...txt(arr.Deviation)])];
+  const other = txt(dep.OtherInformation).filter(x => !/^(Ingen|Ej)\b/.test(x));
+  const multiFrom = route().from.length > 1 || route().to.length > 1;
+  let html = `<div class="card${i === 0 ? ' first' : ''}${cx ? ' cx' : ''}">
+    <div class="r1">${timeHtml(dep)}<span class="dur">→</span><span class="arr">${timeHtml(arr, 'x')}</span><span class="dur">${dur} min</span>
+      <span class="trk"><small>Gleis</small>${esc(dep.TrackAtLocation || '–')}</span></div>
+    <div class="r2"><span class="in">${cx ? 'Fällt aus' : relIn(dep)}</span> · <b>${esc(prod || 'Zug')} ${esc(dep.AdvertisedTrainIdent)}</b> · ${esc(op)}${dest ? ' · mot ' + esc(dest) : ''}</div>
+    <div class="r2">${multiFrom ? `ab <b>${esc(name(dep.LocationSignature))}</b> · an <b>${esc(name(arr.LocationSignature))}</b>` : `an ${esc(name(arr.LocationSignature))}`}${arr.TrackAtLocation ? ' Gleis ' + esc(arr.TrackAtLocation) : ''}</div>`;
+  if (devs.length) html += `<div class="dev">${devs.map(esc).join(' · ')}</div>`;
+  if (other.length) html += `<div class="info">${other.map(esc).join(' · ')}</div>`;
+  if (t.last && t.last.LocationSignature !== dep.LocationSignature && new Date(t.last.TimeAtLocation) < new Date(dep.AdvertisedTimeAtLocation)) {
+    const d = delayMin(t.last);
+    html += `<div class="pos">${t.last.ActivityType === 'Ankomst' ? 'an' : 'ab'} ${esc(name(t.last.LocationSignature))} ${hm(t.last.TimeAtLocation)}${d ? ` (${d > 0 ? '+' : ''}${d})` : ''}</div>`;
+  }
+  if (t.stops && t.stops.length) {
+    const mid = t.stops.length - 2;
+    html += `<details data-id="${esc(t.id)}"${state.open.has(t.id) ? ' open' : ''}><summary>${mid > 0 ? mid + ' Zwischenhalt' + (mid > 1 ? 'e' : '') : 'ohne Zwischenhalt'} ▾</summary><ol class="stops">` +
+      t.stops.map((s, k) => {
+        const end = k === 0 || k === t.stops.length - 1;
+        const done = (s.dep && s.dep.TimeAtLocation) || (s.arr && s.arr.TimeAtLocation);
+        const a = s.arr, d = s.dep;
+        const tm = k === 0 ? stopTime(d) : k === t.stops.length - 1 ? stopTime(a) : (a && d && hm(a.AdvertisedTimeAtLocation) !== hm(d.AdvertisedTimeAtLocation) ? stopTime(a) + '–' + stopTime(d) : stopTime(d || a));
+        const trk = (d || a).TrackAtLocation;
+        return `<li class="${done ? 'done ' : ''}${end ? 'end' : ''}"><span class="n">${esc(name(s.sig))}</span><span class="tm">${tm}</span><span class="g">${trk ? 'Gl. ' + esc(trk) : ''}</span></li>`;
+      }).join('') + `</ol></details>`;
+  }
+  return html + `</div>`;
+}
+
+function render() {
+  const rt = route();
+  $('#title').textContent = rt.title;
+  document.querySelectorAll('#seg button').forEach(b => b.classList.toggle('on', b.dataset.d === state.mode));
+  $('#loc').textContent = state.mode === 'auto' ? state.locText : 'manuell gewählt';
+  const L = $('#list');
+  if (!state.key) {
+    L.innerHTML = `<div class="msg">Bitte zuerst unter ⚙︎ den kostenlosen Trafikverket-API-Schlüssel eintragen.</div>`;
+    $('#settings').classList.add('open');
+    return;
+  }
+  const data = state.data;
+  if (state.error) $('#upd').innerHTML = `<span style="color:var(--bad)">${esc(state.error)}</span>`;
+  else if (data) $('#upd').textContent = (state.busy ? 'lädt… · ' : '') + 'Stand ' + new Date(data.ts).toLocaleTimeString('sv-SE');
+  else $('#upd').textContent = state.busy ? 'lädt…' : '';
+  if (!data || data.dir !== dir()) { if (!state.error) L.innerHTML = `<div class="msg">Lade Verbindungen…</div>`; return; }
+  L.innerHTML = data.trains.length ? data.trains.map(card).join('') : `<div class="msg">Keine Direktverbindung in den nächsten 3 Stunden.</div>`;
+}
+
+// ---------- Ablauf ----------
+let seq = 0;
+async function refresh() {
+  if (!state.key) return render();
+  const my = ++seq, d = dir();
+  state.busy = true; render();
+  try {
+    const data = await loadTrains(d);
+    if (my !== seq) return;
+    const prev = state.data && state.data.dir === d ? state.data : null;
+    if (prev) for (const t of data.trains) { const o = prev.trains.find(x => x.id === t.id); if (o) { t.stops = o.stops; t.last = o.last; } }
+    state.data = data; state.error = ''; render();
+    await Promise.all([loadStops(data).catch(() => {}), loadNames()]);
+    if (my !== seq) return;
+    ls.set('cache_' + d, data);
+  } catch (e) {
+    if (my !== seq) return;
+    state.error = e.status === 401 || /auth/i.test(e.message) ? 'API-Schlüssel ungültig' : navigator.onLine === false ? 'offline' : 'Fehler: ' + e.message;
+  }
+  state.busy = false; render();
+}
+
+function km(a, b) {
+  const r = Math.PI / 180, dLat = (b.lat - a.lat) * r, dLon = (b.lon - a.lon) * r;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLon / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(h));
+}
+function locate() {
+  if (!navigator.geolocation) { state.locText = 'kein GPS – letzte Richtung'; return render(); }
+  state.locText = '📍 Standort wird geprüft…'; render();
+  navigator.geolocation.getCurrentPosition(p => {
+    const here = {lat: p.coords.latitude, lon: p.coords.longitude};
+    const dk = km(here, KNIVSTA), ds = km(here, STHLM);
+    const nd = dk <= KNIVSTA_RADIUS_KM || dk < ds ? 'toSt' : 'toKn';
+    state.locText = nd === 'toSt' ? `📍 Raum Knivsta (${dk.toFixed(1).replace('.', ',')} km)` : `📍 Raum Stockholm (${ds.toFixed(1).replace('.', ',')} km)`;
+    const changed = nd !== state.autoDir;
+    state.autoDir = nd; ls.set('autoDir', nd);
+    if (state.mode === 'auto' && changed) { useCache(); refresh(); } else render();
+  }, () => { state.locText = '📍 Standort nicht verfügbar – letzte Richtung'; render(); },
+  {enableHighAccuracy: false, maximumAge: 120e3, timeout: 8000});
+}
+function useCache() {
+  const c = ls.get('cache_' + dir(), null);
+  if (c && Date.now() - c.ts < 15 * 60e3) state.data = c;
+}
+
+document.getElementById('seg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  state.mode = b.dataset.d; ls.set('mode', state.mode);
+  if (state.mode === 'auto') locate();
+  useCache(); render(); refresh();
+});
+$('#btnRefresh').onclick = () => { if (state.mode === 'auto') locate(); refresh(); };
+$('#btnSettings').onclick = () => $('#settings').classList.toggle('open');
+$('#key').value = state.key; $('#city').checked = state.city;
+$('#btnSave').onclick = () => {
+  state.key = $('#key').value.trim(); state.city = $('#city').checked;
+  ls.set('key', state.key); ls.set('city', state.city);
+  $('#settings').classList.remove('open'); state.data = null; state.error = ''; refresh();
+};
+$('#list').addEventListener('toggle', e => {
+  const id = e.target.dataset && e.target.dataset.id; if (!id) return;
+  e.target.open ? state.open.add(id) : state.open.delete(id);
+}, true);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { if (state.mode === 'auto') locate(); refresh(); } });
+setInterval(() => { if (!document.hidden) refresh(); }, 30e3);
+setInterval(() => { if (!document.hidden && !state.busy) render(); }, 15e3);
+
+useCache(); render(); refresh();
+if (state.mode === 'auto') locate();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
