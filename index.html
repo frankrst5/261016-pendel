@@ -56,6 +56,7 @@ ol.stops,.det{display:none}
 .card.open ol.stops,.card.open .det{display:block}
 .ic{margin-left:5px;font-size:13px}
 .tag{margin-left:6px;font-size:11px;font-weight:700;padding:0 5px;border-radius:5px;border:1px solid currentColor;color:var(--acc)}
+.tag.short{color:var(--late)}
 .det{margin-top:6px;font-size:12.5px}
 .det p{margin:4px 0;padding:6px 8px;border-radius:8px;background:var(--bg)}
 .det b{display:block}
@@ -129,11 +130,13 @@ const ls = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 };
 
+// ohne Standort: vormittags Richtung Stockholm, ab 12 Uhr Richtung Knivsta
+const timeDir = () => new Date().getHours() < 12 ? 'toSt' : 'toKn';
 const state = {
   key: ls.get('key', ''),
   city: ls.get('city', true),
   mode: ls.get('mode', 'auto'),          // auto | toKn | toSt
-  autoDir: ls.get('autoDir', 'toSt'),
+  autoDir: ls.get('autoDirTs', 0) > Date.now() - 2 * 3600e3 ? ls.get('autoDir', 'toSt') : timeDir(),
   locText: '',
   schema: ls.get('schema', '2.0'),
   names: ls.get('names', null),
@@ -277,8 +280,8 @@ function relIn(a) {
 
 let firstPref = null;
 const isSthlm = sig => sig === 'Cst' || sig === 'Sci';
-const NOISE = /biljett|stannar ej|resa förbi|långt tåg/i;
-const LONG = /långt tåg/i;   // Hinweise, die nicht interessieren
+const NOISE = /biljett|stannar ej|resa förbi|långt tåg|kort tåg/i;
+const LONG = /långt tåg/i, SHORT = /kort tåg/i;   // Hinweise, die nicht interessieren
 // nur Pendeltåg werden abgeblendet
 const preferred = t => !/pendelt/i.test(txt(t.dep.ProductInformation).join(' '));
 const prodName = a => { const p = txt(a.ProductInformation).join(' '); return /pendelt/i.test(p) ? 'SL' : p || 'Zug'; };
@@ -326,7 +329,8 @@ function card(t) {
   for (const m of sm) det.push(`<p><b>ℹ️ ${esc(name(m.LocationCode))}</b>${esc(m.FreeText)}</p>`);
   for (const a of [dep, arr]) if (planned(a)) det.push(`<p><b>🚧 Geplante Fahrplanänderung</b>${esc(name(a.LocationSignature))}: ${hm(a.PlannedEstimatedTimeAtLocation)} statt ${hm(a.AdvertisedTimeAtLocation)}</p>`);
   if (prelim(dep) || prelim(arr)) det.push(`<p><b>≈ Prognose vorläufig</b>Die Zeit ist eine grobe Schätzung und kann sich noch deutlich ändern.</p>`);
-  const long = [dep, arr].some(a => [...txt(a.OtherInformation), ...txt(a.Deviation)].some(x => LONG.test(x)));
+  const infos = [dep, arr].flatMap(a => [...txt(a.OtherInformation), ...txt(a.Deviation)]);
+  const long = infos.some(x => LONG.test(x)), short = !long && infos.some(x => SHORT.test(x));
   const icons = (tm.length ? '⚠️' : '') + (sm.length ? 'ℹ️' : '') + (planned(dep) || planned(arr) ? '🚧' : '');
   const devs = [...new Set([...txt(dep.Deviation), ...txt(arr.Deviation)])].filter(x => !NOISE.test(x));
   const st = isSthlm(dep.LocationSignature) ? dep : arr;              // nur das Stockholmer Gleis zeigen
@@ -334,7 +338,7 @@ function card(t) {
   let html = `<div class="card${t === firstPref ? ' first' : ''}${pref ? '' : ' minor'}${cx ? ' cx' : ''}${state.open.has(t.id) ? ' open' : ''}" data-id="${esc(t.id)}">
     <div class="r1">${timeHtml(dep)}<span class="dur">→</span><span class="arr">${timeHtml(arr, 'x')}</span><span class="dur">${dur} min</span>
       <span class="trk"><small>${st.LocationSignature === 'Sci' ? 'City' : 'Sthlm'} Gl.</small>${esc(st.TrackAtLocation || '–')}</span></div>
-    <div class="r2"><span class="in">${cx ? 'Fällt aus' : relIn(dep)}</span> · <b>${esc(prod)} ${esc(dep.AdvertisedTrainIdent)}</b>${long ? '<span class="tag">Långt tåg</span>' : ''}${icons ? `<span class="ic">${icons}</span>` : ''}</div>`;
+    <div class="r2"><span class="in">${cx ? 'Fällt aus' : relIn(dep)}</span> · <b>${esc(prod)} ${esc(dep.AdvertisedTrainIdent)}</b>${long ? '<span class="tag">Långt tåg</span>' : short ? '<span class="tag short">Kort tåg</span>' : ''}${icons ? `<span class="ic">${icons}</span>` : ''}</div>`;
   if (devs.length) html += `<div class="dev">${devs.map(esc).join(' · ')}</div>`;
   if (t.last && t.last.LocationSignature !== dep.LocationSignature && new Date(t.last.TimeAtLocation) < new Date(dep.AdvertisedTimeAtLocation)) {
     const d = delayMin(t.last);
@@ -557,8 +561,14 @@ function km(a, b) {
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLon / 2) ** 2;
   return 12742 * Math.asin(Math.sqrt(h));
 }
+function noLocation(why) {
+  const nd = timeDir(), changed = nd !== state.autoDir;
+  state.locText = `📍 ${why} – nach Uhrzeit`;
+  state.autoDir = nd;
+  if (state.mode === 'auto' && changed) { state.userPanned = false; state.extra.wxFor = ''; useCache(); refresh(); } else render();
+}
 function locate() {
-  if (!navigator.geolocation) { state.locText = 'kein GPS – letzte Richtung'; return render(); }
+  if (!navigator.geolocation) return noLocation('kein GPS');
   state.locText = '📍 Standort wird geprüft…'; render();
   navigator.geolocation.getCurrentPosition(p => {
     const here = state.here = {lat: p.coords.latitude, lon: p.coords.longitude};
@@ -566,9 +576,9 @@ function locate() {
     const nd = dk <= KNIVSTA_RADIUS_KM || dk < ds ? 'toSt' : 'toKn';
     state.locText = nd === 'toSt' ? `📍 Raum Knivsta (${dk.toFixed(1).replace('.', ',')} km)` : `📍 Raum Stockholm (${ds.toFixed(1).replace('.', ',')} km)`;
     const changed = nd !== state.autoDir;
-    state.autoDir = nd; ls.set('autoDir', nd);
+    state.autoDir = nd; ls.set('autoDir', nd); ls.set('autoDirTs', Date.now());
     if (state.mode === 'auto' && changed) { state.userPanned = false; state.extra.wxFor = ''; useCache(); refresh(); } else render();
-  }, () => { state.locText = '📍 Standort nicht verfügbar – letzte Richtung'; render(); },
+  }, () => noLocation('Standort nicht verfügbar'),
   {enableHighAccuracy: false, maximumAge: 120e3, timeout: 8000});
 }
 function useCache() {
