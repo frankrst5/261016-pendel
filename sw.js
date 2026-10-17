@@ -1,5 +1,5 @@
 // App-Shell offline vorhalten; API-Aufrufe gehen immer ans Netz.
-const CACHE = 'pendel-v7';
+const CACHE = 'pendel-v8';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-180.png', 'icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))); self.skipWaiting(); });
 self.addEventListener('activate', e => {
@@ -9,10 +9,12 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const u = new URL(e.request.url);
   if (e.request.method !== 'GET' || u.origin !== location.origin) return;
-  // stale-while-revalidate: sofort aus dem Cache, im Hintergrund aktualisieren
   e.respondWith(caches.open(CACHE).then(async c => {
     const hit = await c.match(e.request, {ignoreSearch: true});
-    const net = fetch(e.request).then(r => { if (r.ok) c.put(e.request, r.clone()); return r; }).catch(() => hit);
-    return hit || net;
+    const net = fetch(e.request).then(r => { if (r.ok) c.put(e.request, r.clone()); return r; });
+    if (e.request.mode !== 'navigate') return hit || net.catch(() => hit);
+    // Seite selbst: neueste Version bevorzugen, nach 1,5 s oder offline die gespeicherte
+    const timeout = new Promise(ok => setTimeout(() => ok(hit), 1500));
+    return Promise.race([net.catch(() => hit), hit ? timeout : net]).then(r => r || net);
   }));
 });

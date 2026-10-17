@@ -18,11 +18,16 @@
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;-webkit-text-size-adjust:100%}
 body{padding:calc(env(safe-area-inset-top) + 8px) 12px calc(env(safe-area-inset-bottom) + 16px)}
-header{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-h1{font-size:19px;margin:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top{display:flex;gap:6px;margin-bottom:8px}
+.top>button{padding:6px 9px}
 button{font:inherit;color:inherit;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:7px 10px;cursor:pointer}
 button:active{opacity:.6}
-.meta{font-size:12px;color:var(--mute);display:flex;justify-content:space-between;gap:8px;margin:0 2px 8px}
+.meta{font-size:12px;color:var(--mute);display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 2px 8px}
+.ml{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.radio{display:flex;gap:4px;flex:none}
+.radio button{padding:3px 7px;font-size:12px;font-weight:700;border-radius:7px}
+.radio button.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.radio button.wait{opacity:.5}
 .card{background:var(--card);border-radius:12px;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line)}
 .card.first{border-color:var(--acc)}
 .card.minor{padding:6px 12px;opacity:.62}
@@ -31,8 +36,12 @@ button:active{opacity:.6}
 .card.minor .arr,.card.minor .arr .new{font-size:14px}
 .card.minor .trk{font-size:13px;padding:1px 6px;background:var(--mute)}
 .card.minor .r2{font-size:12px}
+.card.minor .new,.card.minor .in,.card.minor .dev,.card.minor .info,.card.minor .tag,.card.minor ol.stops .late{color:var(--fg)}
+.card.minor .dev{font-weight:500}
+.card.minor .pos::before,.card.minor ol.stops li.done::before{color:var(--mute);background:var(--mute);border-color:var(--mute)}
+.card.minor .pos::before{background:none}
 .day{font-size:12px;color:var(--mute);text-align:center;margin:12px 0 6px;font-weight:600}
-.tm-mk.minor{background:#8b93a1;font-size:10px;opacity:.85}
+.tm-mk.minor,.tm-mk.minor.late{background:#8b93a1;font-size:10px;opacity:.85}
 .card.cx{opacity:.75}
 .card.cx .t{text-decoration:line-through}
 .r1{display:flex;align-items:baseline;gap:6px}
@@ -70,14 +79,14 @@ ol.stops .n{flex:1}
 ol.stops .tm{font-variant-numeric:tabular-nums;white-space:nowrap}
 ol.stops s{color:var(--mute)}
 ol.stops .late{color:var(--late);font-weight:600}
-#map{display:none;height:32vh;border-radius:12px;border:1px solid var(--line);margin-bottom:8px;background:var(--card)}
-#map.open{display:block}
+#map{height:32vh;border-radius:12px;border:1px solid var(--line);margin-bottom:8px;background:var(--card)}
 .tm-mk{background:var(--acc);color:#fff;border:2px solid #fff;border-radius:9px;padding:1px 5px;font:700 11px/1.3 -apple-system,system-ui,sans-serif;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.4)}
 .tm-mk.late{background:var(--late)}
 .tm-mk i{font-style:normal;display:inline-block}
 .st-mk{width:10px;height:10px;border-radius:50%;background:#fff;border:3px solid #14171c}
 .me-mk{width:14px;height:14px;border-radius:50%;background:#0a84ff;border:3px solid #fff;box-shadow:0 0 0 2px rgba(10,132,255,.35)}
 .leaflet-container{font:inherit}
+.leaflet-tile-container img{width:256.5px!important;height:256.5px!important}   /* keine Kachelfugen auf iOS */
 .msg{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;font-size:14px}
 .msg.err{border-color:var(--bad)}
 #settings{display:none}
@@ -86,25 +95,23 @@ ol.stops .late{color:var(--late);font-weight:600}
 #settings input[type=text]{width:100%;font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
 .row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
 .chk{display:flex!important;gap:8px;align-items:center}
-.seg{display:flex;gap:6px;margin-bottom:8px}
-.seg button{flex:1;padding:6px;font-size:13px}
+.seg{display:flex;gap:6px;flex:1}
+.seg button{flex:1;padding:6px 4px;font-size:13px;white-space:nowrap}
 .seg button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
 a{color:var(--acc)}
 </style>
 </head>
 <body>
-<header>
-  <h1 id="title">Pendel</h1>
-  <button id="btnRefresh" aria-label="Aktualisieren">↻</button>
-  <button id="btnMap" aria-label="Karte">🗺</button>
+<div class="top">
   <button id="btnSettings" aria-label="Einstellungen">⚙︎</button>
-</header>
-<div class="seg" id="seg">
-  <button data-d="auto">📍 Auto</button>
-  <button data-d="toKn">Sthlm → Knivsta</button>
-  <button data-d="toSt">Knivsta → Sthlm</button>
+  <div class="seg" id="seg">
+    <button data-d="auto">📍 Auto</button>
+    <button data-d="toKn">→ Knivsta</button>
+    <button data-d="toSt">→ Sthlm</button>
+  </div>
 </div>
-<div class="meta"><span id="loc"></span><span id="upd"></span></div>
+<div class="meta"><span class="ml"><span id="loc"></span> <span id="upd"></span></span>
+  <span class="radio" id="radio"><button data-ch="p1">P1</button><button data-ch="p2">P2</button><button data-ch="p3">P3</button><button data-ch="p4">P4</button></span></div>
 <div id="settings" class="msg">
   <b>Einstellungen</b>
   <label for="key">Trafikverket API-Schlüssel</label>
@@ -430,11 +437,13 @@ async function loadPositions(data) {
   return [...latest.values()];
 }
 async function drawMap() {   // nur Züge aus dem Live-Fenster
-  if (!$('#map').classList.contains('open') || !state.data) return;
+  if (!state.data) return;
   try { await loadLeaflet(); } catch (e) { $('#map').textContent = e.message; return; }
   if (!map) {
     map = L.map('map', {zoomControl: false, attributionControl: true}).setView([59.53, 17.93], 9);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 18, attribution: '© OpenStreetMap'}).addTo(map);
+    const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+    L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark ? 'dark_all' : 'rastertiles/voyager'}/{z}/{x}/{y}{r}.png`,
+      {maxZoom: 19, subdomains: 'abcd', attribution: '© OpenStreetMap © CARTO'}).addTo(map);
     for (const [sig, ll] of Object.entries(STATION_POS))
       L.marker(ll, {icon: L.divIcon({className: '', html: '<div class="st-mk"></div>', iconSize: [16, 16]})}).bindTooltip(name(sig)).addTo(map);
     mapLayer = L.layerGroup().addTo(map);
@@ -468,10 +477,9 @@ async function drawMap() {   // nur Züge aus dem Live-Fenster
 
 function render() {
   const rt = route();
-  $('#title').textContent = rt.title;
   document.querySelectorAll('#seg button').forEach(b => b.classList.toggle('on', b.dataset.d === state.mode));
   const wx = state.extra && state.extra.wx;
-  $('#loc').innerHTML = esc(state.mode === 'auto' ? state.locText : 'manuell gewählt') +
+  $('#loc').innerHTML = esc(state.mode === 'auto' ? state.locText : 'manuell') +
     (wx ? `<span class="wx" title="${esc(wx.name || '')}">${wx.icon}${wx.temp}°${wx.wind != null && wx.wind >= 8 ? ' 💨' + wx.wind + ' m/s' : ''}</span>` : '');
   const L = $('#list');
   if (!state.key) {
@@ -481,7 +489,7 @@ function render() {
   }
   const data = state.data;
   if (state.error) $('#upd').innerHTML = `<span style="color:var(--bad)">${esc(state.error)}</span>`;
-  else if (data) $('#upd').textContent = (state.busy ? 'lädt… · ' : '') + 'Stand ' + new Date(data.ts).toLocaleTimeString('sv-SE');
+  else if (data) $('#upd').textContent = state.busy ? '· lädt…' : '· ' + new Date(data.ts).toLocaleTimeString('sv-SE', {hour: '2-digit', minute: '2-digit'});
   else $('#upd').textContent = state.busy ? 'lädt…' : '';
   if (!data || data.dir !== dir()) { if (!state.error) L.innerHTML = `<div class="msg">Lade Verbindungen…</div>`; return; }
   if (!state.more || state.more.dir !== dir()) resetMore();
@@ -563,24 +571,54 @@ function km(a, b) {
 }
 function noLocation(why) {
   const nd = timeDir(), changed = nd !== state.autoDir;
-  state.locText = `📍 ${why} – nach Uhrzeit`;
+  state.locText = `🕒 nach Uhrzeit (${why})`;
   state.autoDir = nd;
   if (state.mode === 'auto' && changed) { state.userPanned = false; state.extra.wxFor = ''; useCache(); refresh(); } else render();
 }
 function locate() {
   if (!navigator.geolocation) return noLocation('kein GPS');
-  state.locText = '📍 Standort wird geprüft…'; render();
+  state.locText = '📍 …'; render();
   navigator.geolocation.getCurrentPosition(p => {
     const here = state.here = {lat: p.coords.latitude, lon: p.coords.longitude};
     const dk = km(here, KNIVSTA), ds = km(here, STHLM);
     const nd = dk <= KNIVSTA_RADIUS_KM || dk < ds ? 'toSt' : 'toKn';
-    state.locText = nd === 'toSt' ? `📍 Raum Knivsta (${dk.toFixed(1).replace('.', ',')} km)` : `📍 Raum Stockholm (${ds.toFixed(1).replace('.', ',')} km)`;
+    state.locText = nd === 'toSt' ? `📍 Knivsta ${dk.toFixed(1).replace('.', ',')} km` : `📍 Sthlm ${ds.toFixed(1).replace('.', ',')} km`;
     const changed = nd !== state.autoDir;
     state.autoDir = nd; ls.set('autoDir', nd); ls.set('autoDirTs', Date.now());
     if (state.mode === 'auto' && changed) { state.userPanned = false; state.extra.wxFor = ''; useCache(); refresh(); } else render();
-  }, () => noLocation('Standort nicht verfügbar'),
-  {enableHighAccuracy: false, maximumAge: 120e3, timeout: 8000});
+  }, () => noLocation('kein Standort'),
+  {enableHighAccuracy: false, maximumAge: 120e3, timeout: 5000});
 }
+// ---------- Radio (Sveriges Radio live) ----------
+const SR = {p1: 132, p2: 163, p3: 164, p4: () => state.autoDir === 'toSt' ? 213 : 701};   // P4 Uppland bzw. P4 Stockholm
+const SR_NAMES = {p1: 'P1', p2: 'P2', p3: 'P3', p4: 'P4'};
+const radio = {audio: null, ch: null};
+function radioUrls(ch) {
+  const id = typeof SR[ch] === 'function' ? SR[ch]() : SR[ch];
+  return [`https://sverigesradio.se/topsy/direkt/srapi/${id}.mp3`, `https://sverigesradio.se/topsy/direktsand/${id}.mp3`];
+}
+function radioUi(wait) {
+  document.querySelectorAll('#radio button').forEach(b => {
+    b.classList.toggle('on', b.dataset.ch === radio.ch && !wait);
+    b.classList.toggle('wait', b.dataset.ch === radio.ch && !!wait);
+  });
+}
+function radioPlay(ch) {
+  if (radio.audio) { radio.audio.pause(); radio.audio.removeAttribute('src'); radio.audio.load(); }
+  if (radio.ch === ch) { radio.ch = null; return radioUi(); }    // gleicher Knopf = Stopp
+  radio.ch = ch;
+  const a = radio.audio || (radio.audio = new Audio());
+  const urls = radioUrls(ch);
+  let k = 0;
+  a.onerror = () => { if (radio.ch === ch && ++k < urls.length) { a.src = urls[k]; a.play().catch(() => {}); } else if (radio.ch === ch) { radio.ch = null; radioUi(); } };
+  a.onplaying = () => radioUi();
+  a.src = urls[0];
+  radioUi(true);
+  a.play().catch(() => {});
+  if ('mediaSession' in navigator) navigator.mediaSession.metadata = new MediaMetadata({title: 'Sveriges Radio ' + SR_NAMES[ch], artist: 'Live'});
+}
+$('#radio').addEventListener('click', e => { const b = e.target.closest('button'); if (b) radioPlay(b.dataset.ch); });
+
 function useCache() {
   const c = ls.get('cache_' + dir(), null);
   if (c && Date.now() - c.ts < 15 * 60e3) state.data = c;
@@ -592,7 +630,6 @@ document.getElementById('seg').addEventListener('click', e => {
   if (state.mode === 'auto') locate();
   useCache(); render(); refresh();
 });
-$('#btnRefresh').onclick = () => { if (state.mode === 'auto') locate(); refresh(); };
 $('#btnSettings').onclick = () => $('#settings').classList.toggle('open');
 $('#key').value = state.key; $('#city').checked = state.city;
 $('#btnSave').onclick = () => {
@@ -608,8 +645,7 @@ $('#list').addEventListener('click', e => {
   const t = allTrains().find(x => x.id === id);
   if (t && !t.stops && state.open.has(id)) loadStops({trains: [t]}).then(render).catch(() => {});
 });
-$('#btnMap').onclick = () => { $('#map').classList.toggle('open'); state.userPanned = false; ls.set('map', $('#map').classList.contains('open')); drawMap(); };
-if (ls.get('map', true)) $('#map').classList.add('open');
+
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { if (state.more && Date.now() - state.more.base > 30 * 60e3) state.more = null; if (state.mode === 'auto') locate(); refresh(); } });
 setInterval(() => { if (!document.hidden) refresh(); }, 30e3);
 setInterval(() => { if (!document.hidden && !state.busy) render(); }, 15e3);
