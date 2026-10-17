@@ -11,7 +11,7 @@ Pro Zug: Abfahrt und Ankunft (bei Verspätung geplante Zeit durchgestrichen, tat
 Produkt und Zugnummer, Abweichungen (Ausfall, Gleiswechsel …) und die letzte gemeldete Position. Tippen auf einen Zug blendet die Halte ein.
 Hinweise erscheinen nur als Icon (⚠️ Störung auf der eigenen Teilstrecke, ℹ️ Bahnhofsmeldung Knivsta bzw. Stockholm mit Streckenbezug,
 🚧 geplante Fahrplanänderung, ≈ vorläufige Prognose) und werden beim Antippen ausgeschrieben. Oben steht das Wetter am Startbahnhof.
-Die Karte (CARTO-Kacheln auf OpenStreetMap-Basis) zeigt die Live-GPS-Positionen der Züge (Trafikverket TrainPosition, Karte: OpenStreetMap/Leaflet).
+Die Karte zeigt die Live-GPS-Positionen der Züge (Trafikverket TrainPosition, Karte: OpenStreetMap/Leaflet).
 Die Daten kommen von der Trafikverket Open API (dieselbe Quelle wie Tågstationen) und werden alle 30 s aktualisiert.
 
 ## Einrichtung
@@ -25,4 +25,7 @@ Die Daten kommen von der Trafikverket Open API (dieselbe Quelle wie Tågstatione
 Statische Dateien (`index.html`, `sw.js`, `manifest.webmanifest`, Icons) und kein Build-Schritt. Zum Beispiel GitHub Pages
 (Settings → Pages → Deploy from branch). Für den Standort braucht die Seite HTTPS.
 
-Oben rechts spielen P1–P4 den Livestream von Sveriges Radio (P4 Uppland im Raum Knivsta, sonst P4 Stockholm); nochmal tippen stoppt.
+Audio-Knöpfe: P1–P4 (Sveriges Radio live; P4 Uppland im Raum Knivsta, sonst P4 Stockholm), Flux (FluxFM live) und HB (neueste Folge des
+Handelsblatt Morning Briefing, Hörposition wird gemerkt). Nochmal tippen stoppt.
+
+Karte: Mit CARTO-Schlüssel (⚙︎) CARTO-Kacheln, sonst OpenStreetMap-Standardkarte.
