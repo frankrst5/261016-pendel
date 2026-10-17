@@ -26,6 +26,6 @@ Statische Dateien (`index.html`, `sw.js`, `manifest.webmanifest`, Icons) und kei
 (Settings → Pages → Deploy from branch). Für den Standort braucht die Seite HTTPS.
 
 Audio-Knöpfe: P1–P4 (Sveriges Radio live; P4 Uppland im Raum Knivsta, sonst P4 Stockholm), Flux (FluxFM live) und HB (neueste Folge des
-Handelsblatt Morning Briefing, Hörposition wird gemerkt). Nochmal tippen stoppt.
+Handelsblatt Morning Briefing ab Sekunde 90, Hörposition wird gemerkt). Nochmal tippen stoppt.
 
-Karte: Mit CARTO-Schlüssel (⚙︎) CARTO-Kacheln, sonst OpenStreetMap-Standardkarte.
+Karte: Mit CARTO-Schlüssel (⚙︎) CARTO-Kacheln, sonst OpenStreetMap-Standardkarte. Kartenstil (automatisch/hell/dunkel) unter ⚙︎.

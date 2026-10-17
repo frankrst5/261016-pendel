@@ -92,7 +92,7 @@ ol.stops .late{color:var(--late);font-weight:600}
 #settings{display:none}
 #settings.open{display:block}
 #settings label{display:block;font-size:13px;margin:8px 0 4px}
-#settings input[type=text]{width:100%;font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
+#settings select,#settings input[type=text]{width:100%;font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
 .row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
 .chk{display:flex!important;gap:8px;align-items:center}
 .seg{display:flex;gap:6px;flex:1}
@@ -119,6 +119,8 @@ a{color:var(--acc)}
   <div style="font-size:12px;color:var(--mute);margin-top:4px">Kostenlos unter <a href="https://data.trafikverket.se/" target="_blank" rel="noopener">data.trafikverket.se</a> (Konto anlegen → API-Nyckel). Wird nur auf diesem Gerät gespeichert.</div>
   <label for="ckey">CARTO-Kartenschlüssel (optional)</label>
   <input id="ckey" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ohne Schlüssel: OpenStreetMap-Standardkarte">
+  <label for="mapstyle">Kartenstil</label>
+  <select id="mapstyle"><option value="auto">automatisch (wie iPhone hell/dunkel)</option><option value="light">immer hell</option><option value="dark">immer dunkel</option></select>
   <label class="chk"><input id="city" type="checkbox"> Pendeltåg über Stockholm City einbeziehen</label>
   <div class="row"><button id="btnSave">Speichern</button></div>
 </div>
@@ -144,6 +146,7 @@ const timeDir = () => new Date().getHours() < 12 ? 'toSt' : 'toKn';
 const state = {
   key: ls.get('key', ''),
   ckey: ls.get('ckey', ''),
+  mapstyle: ls.get('mapstyle', 'auto'),
   city: ls.get('city', true),
   mode: ls.get('mode', 'auto'),          // auto | toKn | toSt
   autoDir: ls.get('autoDirTs', 0) > Date.now() - 2 * 3600e3 ? ls.get('autoDir', 'toSt') : timeDir(),
@@ -422,7 +425,7 @@ let map = null, mapLayer = null, leafletP = null, tiles = null;
 function setTiles() {
   if (!map) return;
   if (tiles) map.removeLayer(tiles);
-  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  const dark = state.mapstyle === 'dark' || (state.mapstyle === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
   tiles = state.ckey
     ? L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark ? 'dark_all' : 'rastertiles/voyager'}/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(state.ckey)}`,
         {maxZoom: 19, subdomains: 'abcd', attribution: '© OpenStreetMap © CARTO'})
@@ -648,7 +651,11 @@ async function radioPlay(ch) {
     if (radio.ch !== 'hb') return;
     urls = [radio.ep.url];
     const pos = ls.get('hbPos', null);
-    a.onloadedmetadata = () => { if (radio.ep && pos && pos.url === radio.ep.url && pos.t > 5) a.currentTime = pos.t - 3; a.onloadedmetadata = null; };
+    const HB_SKIP = 90;                                            // Intro/Werbung überspringen
+    a.onloadedmetadata = () => {
+      const saved = radio.ep && pos && pos.url === radio.ep.url ? pos.t - 3 : 0;
+      a.currentTime = Math.max(HB_SKIP, saved); a.onloadedmetadata = null;
+    };
     a.onpause = () => { if (radio.ep) ls.set('hbPos', {url: radio.ep.url, t: a.currentTime}); };
   } else { urls = radioUrls(ch); a.onloadedmetadata = null; a.onpause = null; }
   let k = 0;
@@ -674,12 +681,13 @@ document.getElementById('seg').addEventListener('click', e => {
   useCache(); render(); refresh();
 });
 $('#btnSettings').onclick = () => $('#settings').classList.toggle('open');
-$('#key').value = state.key; $('#ckey').value = state.ckey; $('#city').checked = state.city;
+$('#key').value = state.key; $('#ckey').value = state.ckey; $('#mapstyle').value = state.mapstyle; $('#city').checked = state.city;
 $('#btnSave').onclick = () => {
   state.key = $('#key').value.trim(); state.city = $('#city').checked;
   ls.set('key', state.key); ls.set('city', state.city);
   const ck = $('#ckey').value.trim();
-  if (ck !== state.ckey) { state.ckey = ck; ls.set('ckey', ck); setTiles(); }
+  const ms = $('#mapstyle').value;
+  if (ck !== state.ckey || ms !== state.mapstyle) { state.ckey = ck; state.mapstyle = ms; ls.set('ckey', ck); ls.set('mapstyle', ms); setTiles(); }
   $('#settings').classList.remove('open'); state.data = null; state.error = ''; refresh();
 };
 $('#list').addEventListener('click', e => {
