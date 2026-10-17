@@ -30,12 +30,12 @@ button:active{opacity:.6}
 .r1{display:flex;align-items:baseline;gap:6px}
 .t{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
 .new{font-size:22px;font-weight:700;color:var(--late);font-variant-numeric:tabular-nums}
-.old{margin-left:4px;text-decoration:line-through;color:var(--mute);font-weight:500;font-size:16px}
+.old{margin-right:2px;text-decoration:line-through;color:var(--mute);font-weight:500;font-size:16px}
 .arr{font-size:16px;font-variant-numeric:tabular-nums}
 .arr .new{font-size:16px}
-.dur{font-size:12px;color:var(--mute)}
+.dur{font-size:12px;color:var(--mute);white-space:nowrap}
 .trk{margin-left:auto;align-self:center;background:var(--trk);color:var(--trkfg);border-radius:7px;padding:2px 8px;font-weight:700;font-size:15px;min-width:34px;text-align:center}
-.trk small{font-weight:500;font-size:10px;display:block;line-height:1;opacity:.8}
+.trk small{font-weight:500;font-size:10px;display:block;line-height:1;opacity:.8;white-space:nowrap}
 .r2{font-size:13px;color:var(--mute);margin-top:2px}
 .r2 b{color:var(--fg);font-weight:600}
 .in{color:var(--acc);font-weight:700}
@@ -43,17 +43,26 @@ button:active{opacity:.6}
 .info{color:var(--late);font-size:12.5px;margin-top:3px}
 .pos{font-size:12.5px;margin-top:3px;color:var(--fg)}
 .pos::before{content:"● ";color:var(--ok)}
-details{margin-top:4px}
-summary{font-size:12.5px;color:var(--acc);cursor:pointer;list-style:none}
-summary::-webkit-details-marker{display:none}
-ol.stops{list-style:none;margin:6px 0 0;padding:0;font-size:13px;border-left:2px solid var(--line);margin-left:4px}
+.card{cursor:pointer;-webkit-tap-highlight-color:transparent}
+ol.stops{display:none}
+.card.open ol.stops{display:block}
+ol.stops{list-style:none;margin:8px 0 0;padding:0;font-size:13px;border-left:2px solid var(--line);margin-left:4px}
 ol.stops li{display:flex;gap:8px;padding:2px 0 2px 10px;position:relative}
 ol.stops li::before{content:"";position:absolute;left:-5px;top:8px;width:8px;height:8px;border-radius:50%;background:var(--card);border:2px solid var(--mute)}
 ol.stops li.done::before{background:var(--ok);border-color:var(--ok)}
 ol.stops li.end{font-weight:700}
 ol.stops .n{flex:1}
 ol.stops .tm{font-variant-numeric:tabular-nums;white-space:nowrap}
-ol.stops .g{color:var(--mute);font-size:11.5px;min-width:42px;text-align:right}
+ol.stops s{color:var(--mute)}
+ol.stops .late{color:var(--late);font-weight:600}
+#map{display:none;height:46vh;border-radius:12px;border:1px solid var(--line);margin-bottom:8px;background:var(--card)}
+#map.open{display:block}
+.tm-mk{background:var(--acc);color:#fff;border:2px solid #fff;border-radius:9px;padding:1px 5px;font:700 11px/1.3 -apple-system,system-ui,sans-serif;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.tm-mk.late{background:var(--late)}
+.tm-mk i{font-style:normal;display:inline-block}
+.st-mk{width:10px;height:10px;border-radius:50%;background:#fff;border:3px solid #14171c}
+.me-mk{width:14px;height:14px;border-radius:50%;background:#0a84ff;border:3px solid #fff;box-shadow:0 0 0 2px rgba(10,132,255,.35)}
+.leaflet-container{font:inherit}
 .msg{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;font-size:14px}
 .msg.err{border-color:var(--bad)}
 #settings{display:none}
@@ -72,6 +81,7 @@ a{color:var(--acc)}
 <header>
   <h1 id="title">Pendel</h1>
   <button id="btnRefresh" aria-label="Aktualisieren">↻</button>
+  <button id="btnMap" aria-label="Karte">🗺</button>
   <button id="btnSettings" aria-label="Einstellungen">⚙︎</button>
 </header>
 <div class="seg" id="seg">
@@ -88,6 +98,7 @@ a{color:var(--acc)}
   <label class="chk"><input id="city" type="checkbox"> Pendeltåg über Stockholm City einbeziehen</label>
   <div class="row"><button id="btnSave">Speichern</button></div>
 </div>
+<div id="map"></div>
 <main id="list"></main>
 
 <script>
@@ -230,18 +241,22 @@ const delayMin = a => {
 function timeHtml(a, cls = 't') {
   const real = a.TimeAtLocation || a.EstimatedTimeAtLocation;
   if (real && hm(real) !== hm(a.AdvertisedTimeAtLocation))
-    return `<span class="new">${hm(real)}</span><span class="old">${hm(a.AdvertisedTimeAtLocation)}</span>`;
+    return `<span class="old">${hm(a.AdvertisedTimeAtLocation)}</span><span class="new">${hm(real)}</span>`;
   return `<span class="${cls}">${hm(a.AdvertisedTimeAtLocation)}</span>`;
 }
 function stopTime(a) {
   if (!a) return '';
-  const d = delayMin(a), real = a.TimeAtLocation || a.EstimatedTimeAtLocation;
-  return hm(a.AdvertisedTimeAtLocation) + (real && d ? ` <span style="color:var(--late)">${d > 0 ? '+' : ''}${d}</span>` : '');
+  const real = a.TimeAtLocation || a.EstimatedTimeAtLocation;
+  return real && hm(real) !== hm(a.AdvertisedTimeAtLocation)
+    ? `<s>${hm(a.AdvertisedTimeAtLocation)}</s> <span class="late">${hm(real)}</span>` : hm(a.AdvertisedTimeAtLocation);
 }
 function relIn(a) {
   const m = Math.round((new Date(a.EstimatedTimeAtLocation || a.AdvertisedTimeAtLocation) - Date.now()) / 60e3);
   return m <= 0 ? 'jetzt' : m < 60 ? `in ${m} min` : `in ${Math.floor(m / 60)} h ${m % 60} min`;
 }
+
+const isSthlm = sig => sig === 'Cst' || sig === 'Sci';
+const NOISE = /biljett|stannar ej|resa förbi/i;   // Hinweise, die nicht interessieren
 
 function card(t, i) {
   const {dep, arr} = t;
@@ -249,35 +264,83 @@ function card(t, i) {
   const realDep = dep.EstimatedTimeAtLocation || dep.AdvertisedTimeAtLocation, realArr = arr.EstimatedTimeAtLocation || arr.AdvertisedTimeAtLocation;
   const dur = Math.round((new Date(realArr) - new Date(realDep)) / 60e3);
   const prod = txt(dep.ProductInformation).join(' ');
-  const op = dep.Operator || dep.InformationOwner || '';
-  const dest = txt(dep.ToLocation && dep.ToLocation.map(l => name(l.LocationName))).join(', ');
-  const devs = [...new Set([...txt(dep.Deviation), ...txt(arr.Deviation)])];
-  const other = txt(dep.OtherInformation).filter(x => !/^(Ingen|Ej)\b/.test(x));
-  const multiFrom = route().from.length > 1 || route().to.length > 1;
-  let html = `<div class="card${i === 0 ? ' first' : ''}${cx ? ' cx' : ''}">
+  const devs = [...new Set([...txt(dep.Deviation), ...txt(arr.Deviation)])].filter(x => !NOISE.test(x));
+  const st = isSthlm(dep.LocationSignature) ? dep : arr;              // nur das Stockholmer Gleis zeigen
+  let html = `<div class="card${i === 0 ? ' first' : ''}${cx ? ' cx' : ''}${state.open.has(t.id) ? ' open' : ''}" data-id="${esc(t.id)}">
     <div class="r1">${timeHtml(dep)}<span class="dur">→</span><span class="arr">${timeHtml(arr, 'x')}</span><span class="dur">${dur} min</span>
-      <span class="trk"><small>Gleis</small>${esc(dep.TrackAtLocation || '–')}</span></div>
-    <div class="r2"><span class="in">${cx ? 'Fällt aus' : relIn(dep)}</span> · <b>${esc(prod || 'Zug')} ${esc(dep.AdvertisedTrainIdent)}</b> · ${esc(op)}${dest ? ' · mot ' + esc(dest) : ''}</div>
-    <div class="r2">${multiFrom ? `ab <b>${esc(name(dep.LocationSignature))}</b> · an <b>${esc(name(arr.LocationSignature))}</b>` : `an ${esc(name(arr.LocationSignature))}`}${arr.TrackAtLocation ? ' Gleis ' + esc(arr.TrackAtLocation) : ''}</div>`;
+      <span class="trk"><small>${st.LocationSignature === 'Sci' ? 'City' : 'Sthlm'} Gl.</small>${esc(st.TrackAtLocation || '–')}</span></div>
+    <div class="r2"><span class="in">${cx ? 'Fällt aus' : relIn(dep)}</span> · <b>${esc(prod || 'Zug')} ${esc(dep.AdvertisedTrainIdent)}</b></div>`;
   if (devs.length) html += `<div class="dev">${devs.map(esc).join(' · ')}</div>`;
-  if (other.length) html += `<div class="info">${other.map(esc).join(' · ')}</div>`;
   if (t.last && t.last.LocationSignature !== dep.LocationSignature && new Date(t.last.TimeAtLocation) < new Date(dep.AdvertisedTimeAtLocation)) {
     const d = delayMin(t.last);
     html += `<div class="pos">${t.last.ActivityType === 'Ankomst' ? 'an' : 'ab'} ${esc(name(t.last.LocationSignature))} ${hm(t.last.TimeAtLocation)}${d ? ` (${d > 0 ? '+' : ''}${d})` : ''}</div>`;
   }
   if (t.stops && t.stops.length) {
-    const mid = t.stops.length - 2;
-    html += `<details data-id="${esc(t.id)}"${state.open.has(t.id) ? ' open' : ''}><summary>${mid > 0 ? mid + ' Zwischenhalt' + (mid > 1 ? 'e' : '') : 'ohne Zwischenhalt'} ▾</summary><ol class="stops">` +
-      t.stops.map((s, k) => {
-        const end = k === 0 || k === t.stops.length - 1;
-        const done = (s.dep && s.dep.TimeAtLocation) || (s.arr && s.arr.TimeAtLocation);
-        const a = s.arr, d = s.dep;
-        const tm = k === 0 ? stopTime(d) : k === t.stops.length - 1 ? stopTime(a) : (a && d && hm(a.AdvertisedTimeAtLocation) !== hm(d.AdvertisedTimeAtLocation) ? stopTime(a) + '–' + stopTime(d) : stopTime(d || a));
-        const trk = (d || a).TrackAtLocation;
-        return `<li class="${done ? 'done ' : ''}${end ? 'end' : ''}"><span class="n">${esc(name(s.sig))}</span><span class="tm">${tm}</span><span class="g">${trk ? 'Gl. ' + esc(trk) : ''}</span></li>`;
-      }).join('') + `</ol></details>`;
+    html += `<ol class="stops">` + t.stops.map((s, k) => {
+      const end = k === 0 || k === t.stops.length - 1;
+      const done = (s.dep && s.dep.TimeAtLocation) || (s.arr && s.arr.TimeAtLocation);
+      const tm = k === 0 ? stopTime(s.dep) : stopTime(s.arr || s.dep);
+      return `<li class="${done ? 'done ' : ''}${end ? 'end' : ''}"><span class="n">${esc(name(s.sig))}</span><span class="tm">${tm}</span></li>`;
+    }).join('') + `</ol>`;
   }
   return html + `</div>`;
+}
+
+// ---------- Karte (Live-Positionen) ----------
+const STATION_POS = {Kn: [59.7258, 17.7866], Cst: [59.3307, 18.0586], Sci: [59.3313, 18.0596]};
+let map = null, mapLayer = null, leafletP = null;
+function loadLeaflet() {
+  return leafletP || (leafletP = new Promise((ok, fail) => {
+    const css = document.createElement('link'); css.rel = 'stylesheet';
+    css.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css'; document.head.appendChild(css);
+    const js = document.createElement('script'); js.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
+    js.onload = ok; js.onerror = () => { leafletP = null; fail(new Error('Karte konnte nicht geladen werden')); }; document.head.appendChild(js);
+  }));
+}
+async function loadPositions(data) {
+  const nums = [...new Set(data.trains.map(t => t.dep.AdvertisedTrainIdent))];
+  if (!nums.length) return [];
+  const res = await post([`<QUERY objecttype="TrainPosition" namespace="järnväg.trafikinfo" schemaversion="1.1"><FILTER><AND>${anyOf('Train.AdvertisedTrainNumber', nums)}<GT name="TimeStamp" value="$dateadd(-00:10:00)"/></AND></FILTER></QUERY>`]);
+  const latest = new Map();
+  for (const p of res[0].TrainPosition || []) {
+    const n = p.Train && p.Train.AdvertisedTrainNumber, m = /POINT\s*\(\s*([\d.]+)\s+([\d.]+)/.exec(p.Position && p.Position.WGS84 || '');
+    if (!n || !m) continue;
+    const o = latest.get(n);
+    if (!o || new Date(p.TimeStamp) > new Date(o.ts)) latest.set(n, {n, lat: +m[2], lon: +m[1], speed: p.Speed, bearing: p.Bearing, ts: p.TimeStamp});
+  }
+  return [...latest.values()];
+}
+async function drawMap() {
+  if (!$('#map').classList.contains('open') || !state.data) return;
+  try { await loadLeaflet(); } catch (e) { $('#map').textContent = e.message; return; }
+  if (!map) {
+    map = L.map('map', {zoomControl: false, attributionControl: true}).setView([59.53, 17.93], 9);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 18, attribution: '© OpenStreetMap'}).addTo(map);
+    for (const [sig, ll] of Object.entries(STATION_POS))
+      L.marker(ll, {icon: L.divIcon({className: '', html: '<div class="st-mk"></div>', iconSize: [16, 16]})}).bindTooltip(name(sig)).addTo(map);
+    mapLayer = L.layerGroup().addTo(map);
+  }
+  map.invalidateSize();
+  let pos = [];
+  try { pos = await loadPositions(state.data); } catch {}
+  mapLayer.clearLayers();
+  const pts = [];
+  if (state.here) {
+    L.marker([state.here.lat, state.here.lon], {icon: L.divIcon({className: '', html: '<div class="me-mk"></div>', iconSize: [20, 20]})}).addTo(mapLayer);
+    pts.push([state.here.lat, state.here.lon]);
+  }
+  for (const p of pos) {
+    const t = state.data.trains.find(x => x.dep.AdvertisedTrainIdent === p.n);
+    const d = t ? delayMin(t.dep) : 0;
+    const arrow = p.bearing != null ? `<i style="transform:rotate(${p.bearing}deg)">↑</i> ` : '';
+    const label = `${arrow}${hm(t.dep.EstimatedTimeAtLocation || t.dep.AdvertisedTimeAtLocation)}${d > 0 ? ' +' + d : ''}`;
+    L.marker([p.lat, p.lon], {icon: L.divIcon({className: '', html: `<div class="tm-mk${d > 0 ? ' late' : ''}">${label}</div>`, iconSize: null, iconAnchor: [20, 10]})})
+      .bindPopup(`<b>${esc(txt(t.dep.ProductInformation).join(' '))} ${esc(p.n)}</b><br>${p.speed != null ? p.speed + ' km/h · ' : ''}Stand ${hm(p.ts)}`).addTo(mapLayer);
+    pts.push([p.lat, p.lon]);
+  }
+  pts.push(STATION_POS.Kn, STATION_POS.Cst);
+  if (!state.mapFitted) { map.fitBounds(pts, {padding: [24, 24], maxZoom: 12}); state.mapFitted = true; }
+  $('#map').dataset.count = pos.length;
 }
 
 function render() {
@@ -311,7 +374,7 @@ async function refresh() {
     const prev = state.data && state.data.dir === d ? state.data : null;
     if (prev) for (const t of data.trains) { const o = prev.trains.find(x => x.id === t.id); if (o) { t.stops = o.stops; t.last = o.last; } }
     state.data = data; state.error = ''; render();
-    await Promise.all([loadStops(data).catch(() => {}), loadNames()]);
+    await Promise.all([loadStops(data).catch(() => {}), loadNames(), drawMap()]);
     if (my !== seq) return;
     ls.set('cache_' + d, data);
   } catch (e) {
@@ -330,7 +393,7 @@ function locate() {
   if (!navigator.geolocation) { state.locText = 'kein GPS – letzte Richtung'; return render(); }
   state.locText = '📍 Standort wird geprüft…'; render();
   navigator.geolocation.getCurrentPosition(p => {
-    const here = {lat: p.coords.latitude, lon: p.coords.longitude};
+    const here = state.here = {lat: p.coords.latitude, lon: p.coords.longitude};
     const dk = km(here, KNIVSTA), ds = km(here, STHLM);
     const nd = dk <= KNIVSTA_RADIUS_KM || dk < ds ? 'toSt' : 'toKn';
     state.locText = nd === 'toSt' ? `📍 Raum Knivsta (${dk.toFixed(1).replace('.', ',')} km)` : `📍 Raum Stockholm (${ds.toFixed(1).replace('.', ',')} km)`;
@@ -359,10 +422,14 @@ $('#btnSave').onclick = () => {
   ls.set('key', state.key); ls.set('city', state.city);
   $('#settings').classList.remove('open'); state.data = null; state.error = ''; refresh();
 };
-$('#list').addEventListener('toggle', e => {
-  const id = e.target.dataset && e.target.dataset.id; if (!id) return;
-  e.target.open ? state.open.add(id) : state.open.delete(id);
-}, true);
+$('#list').addEventListener('click', e => {
+  const c = e.target.closest('.card'); if (!c) return;
+  const id = c.dataset.id;
+  state.open.has(id) ? state.open.delete(id) : state.open.add(id);
+  c.classList.toggle('open');
+});
+$('#btnMap').onclick = () => { $('#map').classList.toggle('open'); state.mapFitted = false; ls.set('map', $('#map').classList.contains('open')); drawMap(); };
+if (ls.get('map', false)) $('#map').classList.add('open');
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { if (state.mode === 'auto') locate(); refresh(); } });
 setInterval(() => { if (!document.hidden) refresh(); }, 30e3);
 setInterval(() => { if (!document.hidden && !state.busy) render(); }, 15e3);

@@ -5,8 +5,9 @@ Kleine Web-App fürs iPhone. Sie prüft den Standort und zeigt nur die nächsten
 - **Raum Knivsta** (inkl. Vassunda/Alsike, Radius 18 km): Knivsta → Stockholm C / Stockholm City
 - **sonst**: Stockholm C / Stockholm City → Knivsta
 
-Pro Zug: Abfahrt geplant/prognostiziert, Ankunft, Dauer, Gleis (Abfahrt und Ankunft), Zugnummer, Produkt, Betreiber, Ziel,
-Abweichungen (Ausfall, Gleiswechsel …), letzte gemeldete Position und die Zwischenhalte mit Zeiten und Gleisen.
+Pro Zug: Abfahrt und Ankunft (bei Verspätung geplante Zeit durchgestrichen, tatsächliche daneben), Dauer, Gleis in Stockholm,
+Produkt und Zugnummer, Abweichungen (Ausfall, Gleiswechsel …) und die letzte gemeldete Position. Tippen auf einen Zug blendet die Halte ein.
+🗺 zeigt eine Karte mit den Live-GPS-Positionen der Züge (Trafikverket TrainPosition, Karte: OpenStreetMap/Leaflet).
 Die Daten kommen von der Trafikverket Open API (dieselbe Quelle wie Tågstationen) und werden alle 30 s aktualisiert.
 
 ## Einrichtung
