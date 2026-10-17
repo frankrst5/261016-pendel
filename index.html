@@ -31,6 +31,7 @@ button:active{opacity:.6}
 .card.minor .arr,.card.minor .arr .new{font-size:14px}
 .card.minor .trk{font-size:13px;padding:1px 6px;background:var(--mute)}
 .card.minor .r2{font-size:12px}
+.day{font-size:12px;color:var(--mute);text-align:center;margin:12px 0 6px;font-weight:600}
 .tm-mk.minor{background:#8b93a1;font-size:10px;opacity:.85}
 .card.cx{opacity:.75}
 .card.cx .t{text-decoration:line-through}
@@ -118,7 +119,7 @@ a{color:var(--acc)}
 const API = 'https://api.trafikinfo.trafikverket.se/v2/data.json';
 const KNIVSTA = {lat: 59.7258, lon: 17.7866}, STHLM = {lat: 59.3307, lon: 18.0586};
 const KNIVSTA_RADIUS_KM = 18;            // Knivsta inkl. Vassunda, Alsike
-const MAX_TRAINS = 8;
+const FIRST_H = 3, PAGE_H = 6, MAX_H = 36;   // Live-Fenster, Nachladeschritt, Gesamthorizont (Stunden)
 const FALLBACK_NAMES = {Cst: 'Stockholm C', Sci: 'Stockholm City', Kn: 'Knivsta', U: 'Uppsala C'};
 
 const $ = s => document.querySelector(s);
@@ -190,11 +191,13 @@ async function loadNames() {
   } catch {}
 }
 
-async function loadTrains(d) {
+async function loadTrains(d, from, to) {      // ohne from/to: Live-Fenster ab jetzt
   const rt = route(d);
+  const iso = ms => new Date(ms).toISOString();
+  const [d0, d1, a1] = from ? [iso(from), iso(to), iso(to + 3 * 3600e3)] : ['$dateadd(-00:15:00)', `$dateadd(0${FIRST_H}:00:00)`, `$dateadd(0${FIRST_H + 2}:00:00)`];
   const res = await postTA(() => [
-    queryXml('TrainAnnouncement', `<AND>${eq('ActivityType', 'Avgang')}${eq('Advertised', 'true')}${anyOf('LocationSignature', rt.from)}<GT name="AdvertisedTimeAtLocation" value="$dateadd(-00:15:00)"/><LT name="AdvertisedTimeAtLocation" value="$dateadd(03:00:00)"/></AND>`, 'orderby="AdvertisedTimeAtLocation"'),
-    queryXml('TrainAnnouncement', `<AND>${eq('ActivityType', 'Ankomst')}${eq('Advertised', 'true')}${anyOf('LocationSignature', rt.to)}<GT name="AdvertisedTimeAtLocation" value="$dateadd(-00:15:00)"/><LT name="AdvertisedTimeAtLocation" value="$dateadd(04:30:00)"/></AND>`, 'orderby="AdvertisedTimeAtLocation"')
+    queryXml('TrainAnnouncement', `<AND>${eq('ActivityType', 'Avgang')}${eq('Advertised', 'true')}${anyOf('LocationSignature', rt.from)}<GT name="AdvertisedTimeAtLocation" value="${d0}"/><LT name="AdvertisedTimeAtLocation" value="${d1}"/></AND>`, 'orderby="AdvertisedTimeAtLocation"'),
+    queryXml('TrainAnnouncement', `<AND>${eq('ActivityType', 'Ankomst')}${eq('Advertised', 'true')}${anyOf('LocationSignature', rt.to)}<GT name="AdvertisedTimeAtLocation" value="${d0}"/><LT name="AdvertisedTimeAtLocation" value="${a1}"/></AND>`, 'orderby="AdvertisedTimeAtLocation"')
   ]);
   const deps = res[0].TrainAnnouncement || [], arrs = res[1].TrainAnnouncement || [];
   const now = Date.now();
@@ -207,7 +210,6 @@ async function loadTrains(d) {
       new Date(a.AdvertisedTimeAtLocation) > tDep && new Date(a.AdvertisedTimeAtLocation) - tDep < 3 * 3600e3);
     if (!ar) continue;
     out.push({id: dp.AdvertisedTrainIdent + '|' + dp.AdvertisedTimeAtLocation, dep: dp, arr: ar, stops: null});
-    if (out.length >= MAX_TRAINS) break;
   }
   return {dir: d, trains: out, ts: Date.now()};
 }
@@ -269,17 +271,14 @@ function stopTime(a) {
 }
 function relIn(a) {
   const m = Math.round((new Date(realT(a) || a.AdvertisedTimeAtLocation) - Date.now()) / 60e3);
-  return m <= 0 ? 'jetzt' : m < 60 ? `in ${m} min` : `in ${Math.floor(m / 60)} h ${m % 60} min`;
+  return m <= 0 ? 'jetzt' : m < 60 ? `in ${m} min` : m < 180 ? `in ${Math.floor(m / 60)} h ${m % 60} min` : `in ${Math.round(m / 60)} h`;
 }
 
 let firstPref = null;
 const isSthlm = sig => sig === 'Cst' || sig === 'Sci';
 const NOISE = /biljett|stannar ej|resa förbi/i;   // Hinweise, die nicht interessieren
-// bevorzugt: Mälartåg ab/bis Stockholm C, Gleis 1–8 (unbekanntes Gleis zählt mit)
-function preferred(t) {
-  const st = isSthlm(t.dep.LocationSignature) ? t.dep : t.arr, trk = parseInt(st.TrackAtLocation, 10);
-  return /mälartåg/i.test(txt(t.dep.ProductInformation).join(' ')) && st.LocationSignature === 'Cst' && (isNaN(trk) || (trk >= 1 && trk <= 8));
-}
+// nur Pendeltåg werden abgeblendet
+const preferred = t => !/pendelt/i.test(txt(t.dep.ProductInformation).join(' '));
 const prodName = a => { const p = txt(a.ProductInformation).join(' '); return /pendelt/i.test(p) ? 'SL' : p || 'Zug'; };
 
 // Störungen, die diesen Zug wirklich betreffen: mind. ein Ort auf der eigenen Teilstrecke außerhalb von Stockholm C/City,
@@ -423,7 +422,7 @@ async function loadPositions(data) {
   }
   return [...latest.values()];
 }
-async function drawMap() {
+async function drawMap() {   // nur Züge aus dem Live-Fenster
   if (!$('#map').classList.contains('open') || !state.data) return;
   try { await loadLeaflet(); } catch (e) { $('#map').textContent = e.message; return; }
   if (!map) {
@@ -478,9 +477,54 @@ function render() {
   else if (data) $('#upd').textContent = (state.busy ? 'lädt… · ' : '') + 'Stand ' + new Date(data.ts).toLocaleTimeString('sv-SE');
   else $('#upd').textContent = state.busy ? 'lädt…' : '';
   if (!data || data.dir !== dir()) { if (!state.error) L.innerHTML = `<div class="msg">Lade Verbindungen…</div>`; return; }
-  firstPref = data.trains.find(t => preferred(t) && !t.dep.Canceled) || null;
-  L.innerHTML = data.trains.length ? data.trains.map(t => card(t)).join('') : `<div class="msg">Keine Direktverbindung in den nächsten 3 Stunden.</div>`;
+  if (!state.more || state.more.dir !== dir()) resetMore();
+  const list = allTrains();
+  firstPref = list.find(t => preferred(t) && !t.dep.Canceled) || null;
+  let html = '', day = new Date().toDateString();
+  for (const t of list) {
+    const dd = new Date(t.dep.AdvertisedTimeAtLocation);
+    if (dd.toDateString() !== day) {
+      day = dd.toDateString();
+      const tomorrow = new Date(Date.now() + 864e5).toDateString() === day;
+      html += `<div class="day">${tomorrow ? 'Morgen · ' : ''}${dd.toLocaleDateString('de-DE', {weekday: 'short', day: 'numeric', month: 'numeric'})}</div>`;
+    }
+    html += card(t);
+  }
+  if (!list.length && moreDone()) html = `<div class="msg">Keine Direktverbindung in den nächsten ${MAX_H} Stunden.</div>`;
+  const m = state.more, h = Math.round((m.until - m.base) / 3600e3);
+  html += moreDone() ? `<div class="day" id="end">Ende der Vorschau (${MAX_H} h)</div>`
+    : `<div class="day" id="more">${m.loading ? 'lädt weitere Verbindungen…' : `bis +${h} h geladen · weiter scrollen`}</div>`;
+  L.innerHTML = html;
+  if (moreObs) { moreObs.disconnect(); const sen = $('#more'); if (sen) moreObs.observe(sen); }
 }
+
+// ---------- Nachladen beim Scrollen ----------
+state.more = null;                            // {dir, base, until, trains, loading}
+function resetMore() { state.more = {dir: dir(), base: Date.now(), until: Date.now() + FIRST_H * 3600e3, trains: [], loading: false}; }
+function allTrains() {
+  const live = state.data ? state.data.trains : [], ids = new Set(live.map(t => t.id));
+  const liveEnd = live.length ? new Date(live[live.length - 1].dep.AdvertisedTimeAtLocation) : 0;
+  const later = state.more && state.more.dir === dir() ? state.more.trains.filter(t => !ids.has(t.id) && new Date(t.dep.AdvertisedTimeAtLocation) > liveEnd) : [];
+  return live.concat(later);
+}
+const moreDone = () => state.more && state.more.until >= state.more.base + MAX_H * 3600e3;
+async function loadMore() {
+  const m = state.more;
+  if (!m || m.loading || moreDone() || m.dir !== dir() || !state.data || state.data.dir !== dir()) return;
+  m.loading = true; render();
+  const to = Math.min(m.until + PAGE_H * 3600e3, m.base + MAX_H * 3600e3);
+  try {
+    const r = await loadTrains(m.dir, m.until, to);
+    if (state.more !== m) return;
+    const ids = new Set(m.trains.map(t => t.id));
+    m.trains.push(...r.trains.filter(t => !ids.has(t.id)));
+    m.until = to;
+  } catch (e) { state.error = 'Fehler beim Nachladen'; }
+  m.loading = false; render();
+  const sen = $('#more');                      // falls der Platzhalter noch sichtbar ist, gleich weiter
+  if (sen && sen.getBoundingClientRect().top < innerHeight + 300) loadMore();
+}
+const moreObs = 'IntersectionObserver' in window ? new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) loadMore(); }, {rootMargin: '300px'}) : null;
 
 // ---------- Ablauf ----------
 let seq = 0;
@@ -492,9 +536,10 @@ async function refresh() {
     const data = await loadTrains(d);
     if (my !== seq) return;
     const prev = state.data && state.data.dir === d ? state.data : null;
-    if (prev) for (const t of data.trains) { const o = prev.trains.find(x => x.id === t.id); if (o) { t.stops = o.stops; t.last = o.last; } }
+    const known = prev ? prev.trains.concat(state.more && state.more.dir === d ? state.more.trains : []) : [];
+    for (const t of data.trains) { const o = known.find(x => x.id === t.id); if (o) { t.stops = o.stops; t.last = o.last; t.route = o.route; } }
     state.data = data; state.error = ''; render();
-    await Promise.all([loadStops(data).catch(() => {}), loadNames(), drawMap(), loadExtra()]);
+    await Promise.all([loadStops({trains: data.trains.slice(0, 12)}).catch(() => {}), loadNames(), drawMap(), loadExtra()]);
     if (my !== seq) return;
     ls.set('cache_' + d, data);
   } catch (e) {
@@ -547,10 +592,12 @@ $('#list').addEventListener('click', e => {
   const id = c.dataset.id;
   state.open.has(id) ? state.open.delete(id) : state.open.add(id);
   c.classList.toggle('open');
+  const t = allTrains().find(x => x.id === id);
+  if (t && !t.stops && state.open.has(id)) loadStops({trains: [t]}).then(render).catch(() => {});
 });
 $('#btnMap').onclick = () => { $('#map').classList.toggle('open'); state.userPanned = false; ls.set('map', $('#map').classList.contains('open')); drawMap(); };
 if (ls.get('map', true)) $('#map').classList.add('open');
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { if (state.mode === 'auto') locate(); refresh(); } });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { if (state.more && Date.now() - state.more.base > 30 * 60e3) state.more = null; if (state.mode === 'auto') locate(); refresh(); } });
 setInterval(() => { if (!document.hidden) refresh(); }, 30e3);
 setInterval(() => { if (!document.hidden && !state.busy) render(); }, 15e3);
 
