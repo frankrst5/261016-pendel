@@ -123,7 +123,7 @@ a{color:var(--acc)}
   <label for="mapstyle">Kartenstil</label>
   <select id="mapstyle"><option value="auto">automatisch (wie iPhone hell/dunkel)</option><option value="light">immer hell</option><option value="dark">immer dunkel</option></select>
   <label class="chk"><input id="city" type="checkbox"> Pendeltåg über Stockholm City einbeziehen</label>
-  <div class="row"><button id="btnSave">Speichern</button></div>
+  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 13</span></div>
 </div>
 <div id="map"></div>
 <main id="list"></main>
@@ -481,14 +481,14 @@ async function drawMap() {   // nur Züge aus dem Live-Fenster
       .bindPopup(`<b>${esc(prodName(t.dep))} ${esc(p.n)}</b><br>${p.speed != null ? p.speed + ' km/h · ' : ''}Stand ${hm(p.ts)}`).addTo(mapLayer);
     pts.push([p.lat, p.lon]);
   }
-  // nächster Zug, der am Startbahnhof erst beginnt (noch ohne GPS): dort als gestrichelter Marker, höchstens einer
+  // nächster Zug ohne GPS-Meldung (beginnt am Startbahnhof oder sendet noch nicht): gestrichelt am Startbahnhof, höchstens einer
   const hasPos = new Set(pos.map(p => p.n));
-  const starter = state.data.trains.find(t => !t.dep.Canceled && !hasPos.has(t.dep.AdvertisedTrainIdent) && STATION_POS[t.dep.LocationSignature] &&
-    (t.origin ? t.origin === t.dep.LocationSignature : ((t.dep.FromLocation || [])[0] || {}).LocationName === t.dep.LocationSignature));
+  const starter = state.data.trains.find(t => !t.dep.Canceled && !t.dep.TimeAtLocation && STATION_POS[t.dep.LocationSignature] &&
+    !hasPos.has(t.dep.AdvertisedTrainIdent));
   if (starter) {
     const d = delayMin(starter.dep);
     L.marker(STATION_POS[starter.dep.LocationSignature], {icon: L.divIcon({className: '', html: `<div class="tm-mk wait${d > 0 ? ' late' : ''}${preferred(starter) ? '' : ' minor'}">${hm(realT(starter.dep) || starter.dep.AdvertisedTimeAtLocation)}${d > 0 ? ' +' + d : ''}</div>`, iconSize: null, iconAnchor: [20, 26]})})
-      .bindPopup(`<b>${esc(prodName(starter.dep))} ${esc(starter.dep.AdvertisedTrainIdent)}</b><br>beginnt in ${esc(name(starter.dep.LocationSignature))}`).addTo(mapLayer);
+      .bindPopup(`<b>${esc(prodName(starter.dep))} ${esc(starter.dep.AdvertisedTrainIdent)}</b><br>${starter.origin === starter.dep.LocationSignature ? 'beginnt in' : 'noch keine GPS-Position · ab'} ${esc(name(starter.dep.LocationSignature))}`).addTo(mapLayer);
   }
   // Startbahnhof + bereits fahrende Züge einpassen, solange nicht selbst verschoben/gezoomt wurde
   for (const sig of route().from) if (STATION_POS[sig]) pts.push(STATION_POS[sig]);
@@ -577,7 +577,7 @@ async function refresh() {
     if (my !== seq) return;
     const prev = state.data && state.data.dir === d ? state.data : null;
     const known = prev ? prev.trains.concat(state.more && state.more.dir === d ? state.more.trains : []) : [];
-    for (const t of data.trains) { const o = known.find(x => x.id === t.id); if (o) { t.stops = o.stops; t.last = o.last; t.route = o.route; } }
+    for (const t of data.trains) { const o = known.find(x => x.id === t.id); if (o) { t.stops = o.stops; t.last = o.last; t.route = o.route; t.origin = o.origin; } }
     state.data = data; state.error = ''; render();
     await Promise.all([loadStops({trains: data.trains.slice(0, 12)}).catch(() => {}), loadNames(), drawMap(), loadExtra()]);
     if (my !== seq) return;
