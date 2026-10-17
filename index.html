@@ -55,6 +55,7 @@ button:active{opacity:.6}
 ol.stops,.det{display:none}
 .card.open ol.stops,.card.open .det{display:block}
 .ic{margin-left:5px;font-size:13px}
+.tag{margin-left:6px;font-size:11px;font-weight:700;padding:0 5px;border-radius:5px;border:1px solid currentColor;color:var(--acc)}
 .det{margin-top:6px;font-size:12.5px}
 .det p{margin:4px 0;padding:6px 8px;border-radius:8px;background:var(--bg)}
 .det b{display:block}
@@ -276,7 +277,8 @@ function relIn(a) {
 
 let firstPref = null;
 const isSthlm = sig => sig === 'Cst' || sig === 'Sci';
-const NOISE = /biljett|stannar ej|resa förbi/i;   // Hinweise, die nicht interessieren
+const NOISE = /biljett|stannar ej|resa förbi|långt tåg/i;
+const LONG = /långt tåg/i;   // Hinweise, die nicht interessieren
 // nur Pendeltåg werden abgeblendet
 const preferred = t => !/pendelt/i.test(txt(t.dep.ProductInformation).join(' '));
 const prodName = a => { const p = txt(a.ProductInformation).join(' '); return /pendelt/i.test(p) ? 'SL' : p || 'Zug'; };
@@ -324,6 +326,7 @@ function card(t) {
   for (const m of sm) det.push(`<p><b>ℹ️ ${esc(name(m.LocationCode))}</b>${esc(m.FreeText)}</p>`);
   for (const a of [dep, arr]) if (planned(a)) det.push(`<p><b>🚧 Geplante Fahrplanänderung</b>${esc(name(a.LocationSignature))}: ${hm(a.PlannedEstimatedTimeAtLocation)} statt ${hm(a.AdvertisedTimeAtLocation)}</p>`);
   if (prelim(dep) || prelim(arr)) det.push(`<p><b>≈ Prognose vorläufig</b>Die Zeit ist eine grobe Schätzung und kann sich noch deutlich ändern.</p>`);
+  const long = [dep, arr].some(a => [...txt(a.OtherInformation), ...txt(a.Deviation)].some(x => LONG.test(x)));
   const icons = (tm.length ? '⚠️' : '') + (sm.length ? 'ℹ️' : '') + (planned(dep) || planned(arr) ? '🚧' : '');
   const devs = [...new Set([...txt(dep.Deviation), ...txt(arr.Deviation)])].filter(x => !NOISE.test(x));
   const st = isSthlm(dep.LocationSignature) ? dep : arr;              // nur das Stockholmer Gleis zeigen
@@ -331,7 +334,7 @@ function card(t) {
   let html = `<div class="card${t === firstPref ? ' first' : ''}${pref ? '' : ' minor'}${cx ? ' cx' : ''}${state.open.has(t.id) ? ' open' : ''}" data-id="${esc(t.id)}">
     <div class="r1">${timeHtml(dep)}<span class="dur">→</span><span class="arr">${timeHtml(arr, 'x')}</span><span class="dur">${dur} min</span>
       <span class="trk"><small>${st.LocationSignature === 'Sci' ? 'City' : 'Sthlm'} Gl.</small>${esc(st.TrackAtLocation || '–')}</span></div>
-    <div class="r2"><span class="in">${cx ? 'Fällt aus' : relIn(dep)}</span> · <b>${esc(prod)} ${esc(dep.AdvertisedTrainIdent)}</b>${icons ? `<span class="ic">${icons}</span>` : ''}</div>`;
+    <div class="r2"><span class="in">${cx ? 'Fällt aus' : relIn(dep)}</span> · <b>${esc(prod)} ${esc(dep.AdvertisedTrainIdent)}</b>${long ? '<span class="tag">Långt tåg</span>' : ''}${icons ? `<span class="ic">${icons}</span>` : ''}</div>`;
   if (devs.length) html += `<div class="dev">${devs.map(esc).join(' · ')}</div>`;
   if (t.last && t.last.LocationSignature !== dep.LocationSignature && new Date(t.last.TimeAtLocation) < new Date(dep.AdvertisedTimeAtLocation)) {
     const d = delayMin(t.last);
