@@ -41,6 +41,7 @@ button:active{opacity:.6}
 .card.minor .pos::before,.card.minor ol.stops li.done::before{color:var(--mute);background:var(--mute);border-color:var(--mute)}
 .card.minor .pos::before{background:none}
 .day{font-size:12px;color:var(--mute);text-align:center;margin:12px 0 6px;font-weight:600}
+.tm-mk.wait{border-style:dashed;opacity:.9}
 .tm-mk.minor,.tm-mk.minor.late{background:#8b93a1;font-size:10px;opacity:.85}
 .card.cx{opacity:.75}
 .card.cx .t{text-decoration:line-through}
@@ -479,6 +480,15 @@ async function drawMap() {   // nur Züge aus dem Live-Fenster
     L.marker([p.lat, p.lon], {icon: L.divIcon({className: '', html: `<div class="tm-mk${d > 0 ? ' late' : ''}${preferred(t) ? '' : ' minor'}">${label}</div>`, iconSize: null, iconAnchor: [20, 10]})})
       .bindPopup(`<b>${esc(prodName(t.dep))} ${esc(p.n)}</b><br>${p.speed != null ? p.speed + ' km/h · ' : ''}Stand ${hm(p.ts)}`).addTo(mapLayer);
     pts.push([p.lat, p.lon]);
+  }
+  // nächster Zug, der am Startbahnhof erst beginnt (noch ohne GPS): dort als gestrichelter Marker, höchstens einer
+  const hasPos = new Set(pos.map(p => p.n));
+  const starter = state.data.trains.find(t => !t.dep.Canceled && !hasPos.has(t.dep.AdvertisedTrainIdent) && STATION_POS[t.dep.LocationSignature] &&
+    (t.origin ? t.origin === t.dep.LocationSignature : ((t.dep.FromLocation || [])[0] || {}).LocationName === t.dep.LocationSignature));
+  if (starter) {
+    const d = delayMin(starter.dep);
+    L.marker(STATION_POS[starter.dep.LocationSignature], {icon: L.divIcon({className: '', html: `<div class="tm-mk wait${d > 0 ? ' late' : ''}${preferred(starter) ? '' : ' minor'}">${hm(realT(starter.dep) || starter.dep.AdvertisedTimeAtLocation)}${d > 0 ? ' +' + d : ''}</div>`, iconSize: null, iconAnchor: [20, 26]})})
+      .bindPopup(`<b>${esc(prodName(starter.dep))} ${esc(starter.dep.AdvertisedTrainIdent)}</b><br>beginnt in ${esc(name(starter.dep.LocationSignature))}`).addTo(mapLayer);
   }
   // Startbahnhof + bereits fahrende Züge einpassen, solange nicht selbst verschoben/gezoomt wurde
   for (const sig of route().from) if (STATION_POS[sig]) pts.push(STATION_POS[sig]);
