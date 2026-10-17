@@ -122,7 +122,7 @@ a{color:var(--acc)}
   <label for="mapstyle">Kartenstil</label>
   <select id="mapstyle"><option value="auto">automatisch (wie iPhone hell/dunkel)</option><option value="light">immer hell</option><option value="dark">immer dunkel</option></select>
   <label class="chk"><input id="city" type="checkbox"> Pendeltåg über Stockholm City einbeziehen</label>
-  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 14</span></div>
+  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 15</span></div>
 </div>
 <div id="map"></div>
 <main id="list"></main>
@@ -597,7 +597,7 @@ function locate() {
     const here = state.here = {lat: p.coords.latitude, lon: p.coords.longitude};
     const dk = km(here, KNIVSTA), ds = km(here, STHLM);
     const nd = dk <= KNIVSTA_RADIUS_KM || dk < ds ? 'toSt' : 'toKn';
-    state.locText = nd === 'toSt' ? `📍 Knivsta ${dk.toFixed(1).replace('.', ',')} km` : `📍 Sthlm ${ds.toFixed(1).replace('.', ',')} km`;
+    state.locText = nd === 'toSt' ? '📍 Knivsta' : '📍 Sthlm';
     const changed = nd !== state.autoDir;
     state.autoDir = nd; ls.set('autoDir', nd); ls.set('autoDirTs', Date.now());
     if (state.mode === 'auto' && changed) { state.userPanned = false; state.extra.wxFor = ''; useCache(); refresh(); } else render();
