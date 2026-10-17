@@ -25,6 +25,13 @@ button:active{opacity:.6}
 .meta{font-size:12px;color:var(--mute);display:flex;justify-content:space-between;gap:8px;margin:0 2px 8px}
 .card{background:var(--card);border-radius:12px;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line)}
 .card.first{border-color:var(--acc)}
+.card.minor{padding:6px 12px;opacity:.62}
+.card.minor.open{opacity:1}
+.card.minor .t,.card.minor .new{font-size:17px}
+.card.minor .arr,.card.minor .arr .new{font-size:14px}
+.card.minor .trk{font-size:13px;padding:1px 6px;background:var(--mute)}
+.card.minor .r2{font-size:12px}
+.tm-mk.minor{background:#8b93a1;font-size:10px;opacity:.85}
 .card.cx{opacity:.75}
 .card.cx .t{text-decoration:line-through}
 .r1{display:flex;align-items:baseline;gap:6px}
@@ -265,8 +272,14 @@ function relIn(a) {
   return m <= 0 ? 'jetzt' : m < 60 ? `in ${m} min` : `in ${Math.floor(m / 60)} h ${m % 60} min`;
 }
 
+let firstPref = null;
 const isSthlm = sig => sig === 'Cst' || sig === 'Sci';
 const NOISE = /biljett|stannar ej|resa förbi/i;   // Hinweise, die nicht interessieren
+// bevorzugt: Mälartåg ab/bis Stockholm C, Gleis 1–8 (unbekanntes Gleis zählt mit)
+function preferred(t) {
+  const st = isSthlm(t.dep.LocationSignature) ? t.dep : t.arr, trk = parseInt(st.TrackAtLocation, 10);
+  return /mälartåg/i.test(txt(t.dep.ProductInformation).join(' ')) && st.LocationSignature === 'Cst' && (isNaN(trk) || (trk >= 1 && trk <= 8));
+}
 const prodName = a => { const p = txt(a.ProductInformation).join(' '); return /pendelt/i.test(p) ? 'SL' : p || 'Zug'; };
 
 // Störungen, die diesen Zug wirklich betreffen: mind. ein Ort auf der eigenen Teilstrecke außerhalb von Stockholm C/City,
@@ -300,7 +313,7 @@ function stationMsgs(t) {
   });
 }
 
-function card(t, i) {
+function card(t) {
   const {dep, arr} = t;
   const cx = dep.Canceled || arr.Canceled;
   const realDep = realT(dep) || dep.AdvertisedTimeAtLocation, realArr = realT(arr) || arr.AdvertisedTimeAtLocation;
@@ -315,7 +328,8 @@ function card(t, i) {
   const icons = (tm.length ? '⚠️' : '') + (sm.length ? 'ℹ️' : '') + (planned(dep) || planned(arr) ? '🚧' : '');
   const devs = [...new Set([...txt(dep.Deviation), ...txt(arr.Deviation)])].filter(x => !NOISE.test(x));
   const st = isSthlm(dep.LocationSignature) ? dep : arr;              // nur das Stockholmer Gleis zeigen
-  let html = `<div class="card${i === 0 ? ' first' : ''}${cx ? ' cx' : ''}${state.open.has(t.id) ? ' open' : ''}" data-id="${esc(t.id)}">
+  const pref = preferred(t);
+  let html = `<div class="card${t === firstPref ? ' first' : ''}${pref ? '' : ' minor'}${cx ? ' cx' : ''}${state.open.has(t.id) ? ' open' : ''}" data-id="${esc(t.id)}">
     <div class="r1">${timeHtml(dep)}<span class="dur">→</span><span class="arr">${timeHtml(arr, 'x')}</span><span class="dur">${dur} min</span>
       <span class="trk"><small>${st.LocationSignature === 'Sci' ? 'City' : 'Sthlm'} Gl.</small>${esc(st.TrackAtLocation || '–')}</span></div>
     <div class="r2"><span class="in">${cx ? 'Fällt aus' : relIn(dep)}</span> · <b>${esc(prod)} ${esc(dep.AdvertisedTrainIdent)}</b>${icons ? `<span class="ic">${icons}</span>` : ''}</div>`;
@@ -432,7 +446,7 @@ async function drawMap() {
     const d = t ? delayMin(t.dep) : 0;
     const arrow = p.bearing != null ? `<i style="transform:rotate(${p.bearing}deg)">↑</i> ` : '';
     const label = `${arrow}${hm(realT(t.dep) || t.dep.AdvertisedTimeAtLocation)}${d > 0 ? ' +' + d : ''}`;
-    L.marker([p.lat, p.lon], {icon: L.divIcon({className: '', html: `<div class="tm-mk${d > 0 ? ' late' : ''}">${label}</div>`, iconSize: null, iconAnchor: [20, 10]})})
+    L.marker([p.lat, p.lon], {icon: L.divIcon({className: '', html: `<div class="tm-mk${d > 0 ? ' late' : ''}${preferred(t) ? '' : ' minor'}">${label}</div>`, iconSize: null, iconAnchor: [20, 10]})})
       .bindPopup(`<b>${esc(prodName(t.dep))} ${esc(p.n)}</b><br>${p.speed != null ? p.speed + ' km/h · ' : ''}Stand ${hm(p.ts)}`).addTo(mapLayer);
     pts.push([p.lat, p.lon]);
   }
@@ -464,7 +478,8 @@ function render() {
   else if (data) $('#upd').textContent = (state.busy ? 'lädt… · ' : '') + 'Stand ' + new Date(data.ts).toLocaleTimeString('sv-SE');
   else $('#upd').textContent = state.busy ? 'lädt…' : '';
   if (!data || data.dir !== dir()) { if (!state.error) L.innerHTML = `<div class="msg">Lade Verbindungen…</div>`; return; }
-  L.innerHTML = data.trains.length ? data.trains.map(card).join('') : `<div class="msg">Keine Direktverbindung in den nächsten 3 Stunden.</div>`;
+  firstPref = data.trains.find(t => preferred(t) && !t.dep.Canceled) || null;
+  L.innerHTML = data.trains.length ? data.trains.map(t => card(t)).join('') : `<div class="msg">Keine Direktverbindung in den nächsten 3 Stunden.</div>`;
 }
 
 // ---------- Ablauf ----------

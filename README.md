@@ -5,6 +5,8 @@ Kleine Web-App fürs iPhone. Sie prüft den Standort und zeigt nur die nächsten
 - **Raum Knivsta** (inkl. Vassunda/Alsike, Radius 18 km): Knivsta → Stockholm C / Stockholm City
 - **sonst**: Stockholm C / Stockholm City → Knivsta
 
+Bevorzugt hervorgehoben: Mälartåg ab/bis Stockholm C, Gleis 1–8. Alle anderen Züge erscheinen kleiner und blasser.
+
 Pro Zug: Abfahrt und Ankunft (bei Verspätung geplante Zeit durchgestrichen, tatsächliche daneben), Dauer, Gleis in Stockholm,
 Produkt und Zugnummer, Abweichungen (Ausfall, Gleiswechsel …) und die letzte gemeldete Position. Tippen auf einen Zug blendet die Halte ein.
 Hinweise erscheinen nur als Icon (⚠️ Störung auf der eigenen Teilstrecke, ℹ️ Bahnhofsmeldung Knivsta bzw. Stockholm mit Streckenbezug,
