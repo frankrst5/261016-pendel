@@ -41,7 +41,6 @@ button:active{opacity:.6}
 .card.minor .pos::before,.card.minor ol.stops li.done::before{color:var(--mute);background:var(--mute);border-color:var(--mute)}
 .card.minor .pos::before{background:none}
 .day{font-size:12px;color:var(--mute);text-align:center;margin:12px 0 6px;font-weight:600}
-.tm-mk.wait{border-style:dashed;opacity:.9}
 .tm-mk.minor,.tm-mk.minor.late{background:#8b93a1;font-size:10px;opacity:.85}
 .card.cx{opacity:.75}
 .card.cx .t{text-decoration:line-through}
@@ -123,7 +122,7 @@ a{color:var(--acc)}
   <label for="mapstyle">Kartenstil</label>
   <select id="mapstyle"><option value="auto">automatisch (wie iPhone hell/dunkel)</option><option value="light">immer hell</option><option value="dark">immer dunkel</option></select>
   <label class="chk"><input id="city" type="checkbox"> Pendeltåg über Stockholm City einbeziehen</label>
-  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 13</span></div>
+  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 14</span></div>
 </div>
 <div id="map"></div>
 <main id="list"></main>
@@ -480,15 +479,6 @@ async function drawMap() {   // nur Züge aus dem Live-Fenster
     L.marker([p.lat, p.lon], {icon: L.divIcon({className: '', html: `<div class="tm-mk${d > 0 ? ' late' : ''}${preferred(t) ? '' : ' minor'}">${label}</div>`, iconSize: null, iconAnchor: [20, 10]})})
       .bindPopup(`<b>${esc(prodName(t.dep))} ${esc(p.n)}</b><br>${p.speed != null ? p.speed + ' km/h · ' : ''}Stand ${hm(p.ts)}`).addTo(mapLayer);
     pts.push([p.lat, p.lon]);
-  }
-  // nächster Zug ohne GPS-Meldung (beginnt am Startbahnhof oder sendet noch nicht): gestrichelt am Startbahnhof, höchstens einer
-  const hasPos = new Set(pos.map(p => p.n));
-  const starter = state.data.trains.find(t => !t.dep.Canceled && !t.dep.TimeAtLocation && STATION_POS[t.dep.LocationSignature] &&
-    !hasPos.has(t.dep.AdvertisedTrainIdent));
-  if (starter) {
-    const d = delayMin(starter.dep);
-    L.marker(STATION_POS[starter.dep.LocationSignature], {icon: L.divIcon({className: '', html: `<div class="tm-mk wait${d > 0 ? ' late' : ''}${preferred(starter) ? '' : ' minor'}">${hm(realT(starter.dep) || starter.dep.AdvertisedTimeAtLocation)}${d > 0 ? ' +' + d : ''}</div>`, iconSize: null, iconAnchor: [20, 26]})})
-      .bindPopup(`<b>${esc(prodName(starter.dep))} ${esc(starter.dep.AdvertisedTrainIdent)}</b><br>${starter.origin === starter.dep.LocationSignature ? 'beginnt in' : 'noch keine GPS-Position · ab'} ${esc(name(starter.dep.LocationSignature))}`).addTo(mapLayer);
   }
   // Startbahnhof + bereits fahrende Züge einpassen, solange nicht selbst verschoben/gezoomt wurde
   for (const sig of route().from) if (STATION_POS[sig]) pts.push(STATION_POS[sig]);
