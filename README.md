@@ -7,7 +7,9 @@ Kleine Web-App fürs iPhone. Sie prüft den Standort und zeigt nur die nächsten
 
 Pro Zug: Abfahrt und Ankunft (bei Verspätung geplante Zeit durchgestrichen, tatsächliche daneben), Dauer, Gleis in Stockholm,
 Produkt und Zugnummer, Abweichungen (Ausfall, Gleiswechsel …) und die letzte gemeldete Position. Tippen auf einen Zug blendet die Halte ein.
-🗺 zeigt eine Karte mit den Live-GPS-Positionen der Züge (Trafikverket TrainPosition, Karte: OpenStreetMap/Leaflet).
+Hinweise erscheinen nur als Icon (⚠️ Störung auf der eigenen Teilstrecke, ℹ️ Bahnhofsmeldung Knivsta bzw. Stockholm mit Streckenbezug,
+🚧 geplante Fahrplanänderung, ≈ vorläufige Prognose) und werden beim Antippen ausgeschrieben. Oben steht das Wetter am Startbahnhof.
+Die Karte (standardmäßig eingeblendet, 🗺 blendet sie aus) zeigt die Live-GPS-Positionen der Züge (Trafikverket TrainPosition, Karte: OpenStreetMap/Leaflet).
 Die Daten kommen von der Trafikverket Open API (dieselbe Quelle wie Tågstationen) und werden alle 30 s aktualisiert.
 
 ## Einrichtung
