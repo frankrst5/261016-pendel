@@ -19,7 +19,9 @@
 @media (prefers-color-scheme:dark){:root{--bg:#0e1013;--card:#181b20;--fg:#eef0f3;--mute:#8b93a1;--line:#272b33;--acc:#5aa2ff;--late:#ff8a3d;--bad:#ff5c5c;--ok:#4cc46d;--trk:#eef0f3;--trkfg:#0e1013}}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;-webkit-text-size-adjust:100%}
-body{padding:calc(env(safe-area-inset-top) + 8px) 12px calc(env(safe-area-inset-bottom) + 16px)}
+body{padding:calc(env(safe-area-inset-top) + 18px) 12px calc(env(safe-area-inset-bottom) + 16px)}
+/* feste, deckende Fläche hinter der Statusleiste: iOS färbt die Leiste damit ein statt Inhalt darunter weichzuzeichnen */
+.sbar{position:fixed;top:0;left:0;right:0;height:calc(env(safe-area-inset-top) + 10px);background:var(--bg);z-index:1000}
 .top{display:flex;gap:6px;margin-bottom:8px}
 .top>button{padding:6px 9px}
 button{font:inherit;color:inherit;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:7px 10px;cursor:pointer}
@@ -104,6 +106,7 @@ a{color:var(--acc)}
 </style>
 </head>
 <body>
+<div class="sbar"></div>
 <div class="top">
   <button id="btnSettings" aria-label="Einstellungen">⚙︎</button>
   <div class="seg" id="seg">
@@ -124,7 +127,7 @@ a{color:var(--acc)}
   <label for="mapstyle">Kartenstil</label>
   <select id="mapstyle"><option value="auto">automatisch (wie iPhone hell/dunkel)</option><option value="light">immer hell</option><option value="dark">immer dunkel</option></select>
   <label class="chk"><input id="city" type="checkbox"> Pendeltåg über Stockholm City einbeziehen</label>
-  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 17</span></div>
+  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 18</span></div>
 </div>
 <div id="map"></div>
 <main id="list"></main>
