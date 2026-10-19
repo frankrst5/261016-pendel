@@ -132,7 +132,7 @@ a{color:var(--acc)}
   <label for="mapstyle">Kartenstil</label>
   <select id="mapstyle"><option value="auto">automatisch (wie iPhone hell/dunkel)</option><option value="light">immer hell</option><option value="dark">immer dunkel</option></select>
   <label class="chk"><input id="city" type="checkbox"> Pendeltåg über Stockholm City einbeziehen</label>
-  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 20</span></div>
+  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 21</span></div>
 </div>
 <div id="map"></div>
 <main id="list"></main>
@@ -704,28 +704,39 @@ function noLocation(why) {
   state.autoDir = nd;
   if (state.mode === 'auto' && changed) { state.userPanned = false; state.extra.wxFor = ''; useCache(); refresh(); } else render();
 }
+// Standort in zwei Stufen: erst schnell (darf bis 2 min alt sein), dann eine frische, genaue Messung nachschieben
+let lastFix = 0;
+async function handlePos(p) {
+  if (p.timestamp < lastFix) return;                 // ältere Messung kam später an
+  lastFix = p.timestamp;
+  const here = state.here = {lat: p.coords.latitude, lon: p.coords.longitude};
+  const corridor = state.mode === 'auto' && state.key && inCorridor(here);
+  if (corridor && traveling()) return;               // schon im Unterwegs-Modus
+  const wasTravel = !!traveling();
+  state.travel = null;
+  if (corridor) {
+    state.travel = {};
+    let ok = false;
+    try { ok = await loadTravel(true); } catch {}
+    if (ok && state.mode === 'auto') { state.locText = '🚆 unterwegs'; state.userPanned = false; render(); drawMap(); return; }
+    state.travel = null;
+  }
+  const dk = km(here, KNIVSTA), ds = km(here, STHLM);
+  const nd = dk <= KNIVSTA_RADIUS_KM || dk < ds ? 'toSt' : 'toKn';
+  state.locText = nd === 'toSt' ? '📍 Knivsta' : '📍 Sthlm';
+  const changed = nd !== state.autoDir || wasTravel;
+  state.autoDir = nd; ls.set('autoDir', nd); ls.set('autoDirTs', Date.now());
+  if (state.mode === 'auto' && changed) { state.userPanned = false; state.extra.wxFor = ''; useCache(); refresh(); } else render();
+}
+function refineLocation() {
+  if (navigator.geolocation) navigator.geolocation.getCurrentPosition(handlePos, () => {}, {enableHighAccuracy: true, maximumAge: 0, timeout: 20000});
+}
 function locate() {
   if (!navigator.geolocation) return noLocation('kein GPS');
   state.locText = '📍 …'; render();
-  navigator.geolocation.getCurrentPosition(async p => {
-    const here = state.here = {lat: p.coords.latitude, lon: p.coords.longitude};
-    const wasTravel = !!traveling();
-    state.travel = null;
-    if (state.mode === 'auto' && state.key && inCorridor(here)) {
-      state.travel = {};
-      let ok = false;
-      try { ok = await loadTravel(true); } catch {}
-      if (ok && state.mode === 'auto') { state.locText = '🚆 unterwegs'; state.userPanned = false; render(); drawMap(); return; }
-      state.travel = null;
-    }
-    const dk = km(here, KNIVSTA), ds = km(here, STHLM);
-    const nd = dk <= KNIVSTA_RADIUS_KM || dk < ds ? 'toSt' : 'toKn';
-    state.locText = nd === 'toSt' ? '📍 Knivsta' : '📍 Sthlm';
-    const changed = nd !== state.autoDir || wasTravel;
-    state.autoDir = nd; ls.set('autoDir', nd); ls.set('autoDirTs', Date.now());
-    if (state.mode === 'auto' && changed) { state.userPanned = false; state.extra.wxFor = ''; useCache(); refresh(); } else render();
-  }, () => noLocation('kein Standort'),
-  {enableHighAccuracy: false, maximumAge: 120e3, timeout: 5000});
+  navigator.geolocation.getCurrentPosition(handlePos, () => noLocation('kein Standort'),
+    {enableHighAccuracy: false, maximumAge: 120e3, timeout: 5000});
+  refineLocation();
 }
 // ---------- Radio (Sveriges Radio live) ----------
 const SR = {p1: 132, p2: 163, p3: 164, p4: () => state.autoDir === 'toSt' ? 213 : 701};   // P4 Uppland bzw. P4 Stockholm
@@ -824,6 +835,7 @@ $('#list').addEventListener('click', e => {
 
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { if (state.more && Date.now() - state.more.base > 30 * 60e3) state.more = null; if (state.mode === 'auto') locate(); refresh(); } });
 setInterval(() => { if (!document.hidden) refresh(); }, 30e3);
+setInterval(() => { if (!document.hidden && state.mode === 'auto') refineLocation(); }, 120e3);   // unterwegs einsteigen erkennen
 setInterval(() => { if (!document.hidden && !state.busy) render(); }, 15e3);
 
 useCache(); render(); refresh();
