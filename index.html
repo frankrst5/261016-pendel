@@ -132,7 +132,7 @@ a{color:var(--acc)}
   <label for="mapstyle">Kartenstil</label>
   <select id="mapstyle"><option value="auto">automatisch (wie iPhone hell/dunkel)</option><option value="light">immer hell</option><option value="dark">immer dunkel</option></select>
   <label class="chk"><input id="city" type="checkbox"> Pendeltåg über Stockholm City einbeziehen</label>
-  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 22</span></div>
+  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 23</span></div>
   <div id="diag" style="font-size:11px;color:var(--mute);margin-top:8px"></div>
 </div>
 <div id="map"></div>
@@ -432,11 +432,15 @@ function nearestWx(pts, ll) {
 
 // ---------- Unterwegs-Modus (im Zug zwischen Knivsta und Stockholm) ----------
 // Bahnstrecke grob: Knivsta – Arlanda C – Rosersberg – Upplands Väsby – Sollentuna – Solna – Stockholm C
-const LINE = [[59.7258, 17.7866], [59.6497, 17.9289], [59.585, 17.885], [59.5186, 17.9116], [59.4283, 17.9484], [59.3654, 18.0102], [59.3307, 18.0586]];
+// plus die alte Linie Knivsta – Märsta – Rosersberg
+const LINES = [
+  [[59.7258, 17.7866], [59.6497, 17.9289], [59.585, 17.885], [59.5186, 17.9116], [59.4283, 17.9484], [59.3654, 18.0102], [59.3307, 18.0586]],
+  [[59.7258, 17.7866], [59.6276, 17.8606], [59.585, 17.885]]
+];
 function distToLine(p) {
   const kx = 111.32 * Math.cos(p.lat * Math.PI / 180), ky = 110.57;
   let best = 1e9;
-  for (let i = 1; i < LINE.length; i++) {
+  for (const LINE of LINES) for (let i = 1; i < LINE.length; i++) {
     const ax = (LINE[i - 1][1] - p.lon) * kx, ay = (LINE[i - 1][0] - p.lat) * ky, bx = (LINE[i][1] - p.lon) * kx, by = (LINE[i][0] - p.lat) * ky;
     const dx = bx - ax, dy = by - ay, u = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy)));
     best = Math.min(best, Math.hypot(ax + u * dx, ay + u * dy));
@@ -733,15 +737,23 @@ async function handlePos(p) {
   state.autoDir = nd; ls.set('autoDir', nd); ls.set('autoDirTs', Date.now());
   if (state.mode === 'auto' && changed) { state.userPanned = false; state.extra.wxFor = ''; useCache(); refresh(); } else render();
 }
+let refining = false;
 function refineLocation() {
-  if (navigator.geolocation) navigator.geolocation.getCurrentPosition(handlePos, e => { diag.err = e.message || e.code; }, {enableHighAccuracy: true, maximumAge: 0, timeout: 20000});
+  if (!navigator.geolocation || refining) return;
+  refining = true;
+  navigator.geolocation.getCurrentPosition(p => { refining = false; diag.err = ''; handlePos(p); },
+    e => { refining = false; diag.err = e.message || 'Code ' + e.code; }, {enableHighAccuracy: true, maximumAge: 0, timeout: 20000});
 }
+// iOS antwortet bei zwei gleichzeitigen Anfragen manchmal gar nicht – deshalb erst schnell, danach genau; Wächter nach 7 s
 function locate() {
   if (!navigator.geolocation) return noLocation('kein GPS');
   state.locText = '📍 …'; render();
-  navigator.geolocation.getCurrentPosition(handlePos, () => noLocation('kein Standort'),
+  let done = false;
+  const guard = setTimeout(() => { if (!done) { done = true; diag.err = 'keine Antwort'; noLocation('kein Standort'); refineLocation(); } }, 7000);
+  navigator.geolocation.getCurrentPosition(
+    p => { if (done) return handlePos(p); done = true; clearTimeout(guard); handlePos(p); refineLocation(); },
+    e => { if (done) return; done = true; clearTimeout(guard); diag.err = e.message || 'Code ' + e.code; noLocation('kein Standort'); refineLocation(); },
     {enableHighAccuracy: false, maximumAge: 120e3, timeout: 5000});
-  refineLocation();
 }
 // ---------- Radio (Sveriges Radio live) ----------
 const SR = {p1: 132, p2: 163, p3: 164, p4: () => state.autoDir === 'toSt' ? 213 : 701};   // P4 Uppland bzw. P4 Stockholm
