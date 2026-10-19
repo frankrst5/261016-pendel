@@ -132,7 +132,7 @@ a{color:var(--acc)}
   <label for="mapstyle">Kartenstil</label>
   <select id="mapstyle"><option value="auto">automatisch (wie iPhone hell/dunkel)</option><option value="light">immer hell</option><option value="dark">immer dunkel</option></select>
   <label class="chk"><input id="city" type="checkbox"> Pendeltåg über Stockholm City einbeziehen</label>
-  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 23</span></div>
+  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 24</span></div>
   <div id="diag" style="font-size:11px;color:var(--mute);margin-top:8px"></div>
 </div>
 <div id="map"></div>
@@ -447,7 +447,7 @@ function distToLine(p) {
   }
   return best;
 }
-const inCorridor = p => distToLine(p) < 3 && km(p, KNIVSTA) > 1.5 && km(p, STHLM) > 2.5;
+const inCorridor = p => distToLine(p) < 1 && km(p, KNIVSTA) > 1.5 && km(p, STHLM) > 2.5;
 const ENDS = ['Kn', 'Cst', 'Sci'];
 state.travel = null;    // {ident, dest, stops, pos, others, cands}
 const traveling = () => state.mode === 'auto' && state.travel && state.travel.dest;
@@ -462,10 +462,14 @@ async function loadTravel(match) {
   const pos = await posQuery([...new Set(tv.cands.map(a => a.AdvertisedTrainIdent))], 5);
   if (match) {
     // Zug-GPS kann bis zu ein paar Minuten alt sein (bei 120 km/h = 2 km/min), daher großzügiger Radius
-    let best = null, bd = 1e9;
-    for (const p of pos) { const d = km(p, state.here); if (d < bd) { bd = d; best = p; } }
+    let best = null, bd = 1e9, bs = 1e9;
+    for (const p of pos) {
+      const d = km(p, state.here), moved = (p.speed || 0) * Math.max(0, Date.now() - new Date(p.ts)) / 3600e3;   // km seit der Meldung
+      const slack = d - moved;                       // was nach Abzug der gefahrenen Strecke übrig bleibt
+      if (slack < bs) { bs = slack; bd = d; best = p; }
+    }
     diag.cands = tv.cands.length; diag.pos = pos.length; diag.nearest = best ? `${best.n} ${bd.toFixed(1)} km, GPS ${hm(best.ts)}` : '–';
-    if (!best || bd > 5) return false;
+    if (!best || bs > 1.5) return false;
     tv.ident = best.n;
   }
   const res = await postTA(() => [queryXml('TrainAnnouncement', `<AND>${eq('Advertised', 'true')}${eq('AdvertisedTrainIdent', tv.ident)}<GT name="AdvertisedTimeAtLocation" value="$dateadd(-04:00:00)"/><LT name="AdvertisedTimeAtLocation" value="$dateadd(03:00:00)"/></AND>`, 'orderby="AdvertisedTimeAtLocation"')]);
@@ -718,8 +722,10 @@ async function handlePos(p) {
   if (p.timestamp < lastFix) return;                 // ältere Messung kam später an
   lastFix = p.timestamp;
   const here = state.here = {lat: p.coords.latitude, lon: p.coords.longitude};
-  const corridor = state.mode === 'auto' && state.key && inCorridor(here);
-  Object.assign(diag, {fix: hm(p.timestamp), acc: Math.round(p.coords.accuracy), line: distToLine(here).toFixed(1), corridor, cands: '–', pos: '–', nearest: '–'});
+  // in Bewegung oder Geschwindigkeit unbekannt, und Messung genau genug
+  const moving = p.coords.speed == null || p.coords.speed < 0 || p.coords.speed > 3;
+  const corridor = state.mode === 'auto' && state.key && inCorridor(here) && p.coords.accuracy < 300 && moving;
+  Object.assign(diag, {fix: hm(p.timestamp), acc: Math.round(p.coords.accuracy), line: distToLine(here).toFixed(1), corridor, speed: p.coords.speed, cands: '–', pos: '–', nearest: '–'});
   if (corridor && traveling()) return;               // schon im Unterwegs-Modus
   const wasTravel = !!traveling();
   state.travel = null;
@@ -833,7 +839,7 @@ document.getElementById('seg').addEventListener('click', e => {
 });
 $('#btnSettings').onclick = () => {
   $('#settings').classList.toggle('open');
-  $('#diag').textContent = `Standort ${diag.fix || '–'} ±${diag.acc ?? '–'} m · ${diag.line ?? '–'} km von der Strecke · Strecke: ${diag.corridor ? 'ja' : 'nein'} · Züge ${diag.cands ?? '–'}/${diag.pos ?? '–'} GPS · nächster: ${diag.nearest || '–'}${diag.err ? ' · Fehler: ' + diag.err : ''}`;
+  $('#diag').textContent = `Standort ${diag.fix || '–'} ±${diag.acc ?? '–'} m · ${diag.speed != null && diag.speed >= 0 ? Math.round(diag.speed * 3.6) + ' km/h · ' : ''}${diag.line ?? '–'} km von der Strecke · Strecke: ${diag.corridor ? 'ja' : 'nein'} · Züge ${diag.cands ?? '–'}/${diag.pos ?? '–'} GPS · nächster: ${diag.nearest || '–'}${diag.err ? ' · Fehler: ' + diag.err : ''}`;
 };
 $('#key').value = state.key; $('#ckey').value = state.ckey; $('#mapstyle').value = state.mapstyle; $('#city').checked = state.city;
 $('#btnSave').onclick = () => {
@@ -853,7 +859,9 @@ $('#list').addEventListener('click', e => {
   if (t && !t.stops && state.open.has(id)) loadStops({trains: [t]}).then(render).catch(() => {});
 });
 
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { if (state.more && Date.now() - state.more.base > 30 * 60e3) state.more = null; if (state.mode === 'auto') locate(); refresh(); } });
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', () => { if (document.hidden) { hiddenAt = Date.now(); return; } if (!document.hidden) {
+  if (hiddenAt && Date.now() - hiddenAt > 10 * 60e3 && state.travel) { state.travel = null; useCache(); render(); } if (state.more && Date.now() - state.more.base > 30 * 60e3) state.more = null; if (state.mode === 'auto') locate(); refresh(); } });
 setInterval(() => { if (!document.hidden) refresh(); }, 30e3);
 setInterval(() => { if (!document.hidden && state.mode === 'auto') refineLocation(); }, 120e3);   // unterwegs einsteigen erkennen
 setInterval(() => { if (!document.hidden && !state.busy) render(); }, 15e3);
