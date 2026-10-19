@@ -132,7 +132,8 @@ a{color:var(--acc)}
   <label for="mapstyle">Kartenstil</label>
   <select id="mapstyle"><option value="auto">automatisch (wie iPhone hell/dunkel)</option><option value="light">immer hell</option><option value="dark">immer dunkel</option></select>
   <label class="chk"><input id="city" type="checkbox"> Pendeltåg über Stockholm City einbeziehen</label>
-  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 21</span></div>
+  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 22</span></div>
+  <div id="diag" style="font-size:11px;color:var(--mute);margin-top:8px"></div>
 </div>
 <div id="map"></div>
 <main id="list"></main>
@@ -456,9 +457,11 @@ async function loadTravel(match) {
   }
   const pos = await posQuery([...new Set(tv.cands.map(a => a.AdvertisedTrainIdent))], 5);
   if (match) {
-    let best = null, bd = 2;
+    // Zug-GPS kann bis zu ein paar Minuten alt sein (bei 120 km/h = 2 km/min), daher großzügiger Radius
+    let best = null, bd = 1e9;
     for (const p of pos) { const d = km(p, state.here); if (d < bd) { bd = d; best = p; } }
-    if (!best) return false;
+    diag.cands = tv.cands.length; diag.pos = pos.length; diag.nearest = best ? `${best.n} ${bd.toFixed(1)} km, GPS ${hm(best.ts)}` : '–';
+    if (!best || bd > 5) return false;
     tv.ident = best.n;
   }
   const res = await postTA(() => [queryXml('TrainAnnouncement', `<AND>${eq('Advertised', 'true')}${eq('AdvertisedTrainIdent', tv.ident)}<GT name="AdvertisedTimeAtLocation" value="$dateadd(-04:00:00)"/><LT name="AdvertisedTimeAtLocation" value="$dateadd(03:00:00)"/></AND>`, 'orderby="AdvertisedTimeAtLocation"')]);
@@ -706,11 +709,13 @@ function noLocation(why) {
 }
 // Standort in zwei Stufen: erst schnell (darf bis 2 min alt sein), dann eine frische, genaue Messung nachschieben
 let lastFix = 0;
+const diag = {};
 async function handlePos(p) {
   if (p.timestamp < lastFix) return;                 // ältere Messung kam später an
   lastFix = p.timestamp;
   const here = state.here = {lat: p.coords.latitude, lon: p.coords.longitude};
   const corridor = state.mode === 'auto' && state.key && inCorridor(here);
+  Object.assign(diag, {fix: hm(p.timestamp), acc: Math.round(p.coords.accuracy), line: distToLine(here).toFixed(1), corridor, cands: '–', pos: '–', nearest: '–'});
   if (corridor && traveling()) return;               // schon im Unterwegs-Modus
   const wasTravel = !!traveling();
   state.travel = null;
@@ -729,7 +734,7 @@ async function handlePos(p) {
   if (state.mode === 'auto' && changed) { state.userPanned = false; state.extra.wxFor = ''; useCache(); refresh(); } else render();
 }
 function refineLocation() {
-  if (navigator.geolocation) navigator.geolocation.getCurrentPosition(handlePos, () => {}, {enableHighAccuracy: true, maximumAge: 0, timeout: 20000});
+  if (navigator.geolocation) navigator.geolocation.getCurrentPosition(handlePos, e => { diag.err = e.message || e.code; }, {enableHighAccuracy: true, maximumAge: 0, timeout: 20000});
 }
 function locate() {
   if (!navigator.geolocation) return noLocation('kein GPS');
@@ -814,7 +819,10 @@ document.getElementById('seg').addEventListener('click', e => {
   if (state.mode === 'auto') locate();
   useCache(); render(); refresh();
 });
-$('#btnSettings').onclick = () => $('#settings').classList.toggle('open');
+$('#btnSettings').onclick = () => {
+  $('#settings').classList.toggle('open');
+  $('#diag').textContent = `Standort ${diag.fix || '–'} ±${diag.acc ?? '–'} m · ${diag.line ?? '–'} km von der Strecke · Strecke: ${diag.corridor ? 'ja' : 'nein'} · Züge ${diag.cands ?? '–'}/${diag.pos ?? '–'} GPS · nächster: ${diag.nearest || '–'}${diag.err ? ' · Fehler: ' + diag.err : ''}`;
+};
 $('#key').value = state.key; $('#ckey').value = state.ckey; $('#mapstyle').value = state.mapstyle; $('#city').checked = state.city;
 $('#btnSave').onclick = () => {
   state.key = $('#key').value.trim(); state.city = $('#city').checked;
