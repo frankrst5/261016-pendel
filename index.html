@@ -83,6 +83,10 @@ ol.stops .n{flex:1}
 ol.stops .tm{font-variant-numeric:tabular-nums;white-space:nowrap}
 ol.stops s{color:var(--mute)}
 ol.stops .late{color:var(--late);font-weight:600}
+#map.big{height:56vh}
+.tm-mk.mine{background:var(--acc);font-size:12px;padding:2px 7px}
+.me-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#fff;border:2px solid #0a84ff;margin-right:4px;vertical-align:-1px}
+.card.travel{cursor:default}
 #map{height:32vh;border-radius:12px;border:1px solid var(--line);margin-bottom:8px;background:var(--card)}
 .tm-mk{background:var(--acc);color:#fff;border:2px solid #fff;border-radius:9px;padding:1px 5px;font:700 11px/1.3 -apple-system,system-ui,sans-serif;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.4)}
 .tm-mk.late{background:var(--late)}
@@ -127,7 +131,7 @@ a{color:var(--acc)}
   <label for="mapstyle">Kartenstil</label>
   <select id="mapstyle"><option value="auto">automatisch (wie iPhone hell/dunkel)</option><option value="light">immer hell</option><option value="dark">immer dunkel</option></select>
   <label class="chk"><input id="city" type="checkbox"> Pendeltåg über Stockholm City einbeziehen</label>
-  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 18</span></div>
+  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 19</span></div>
 </div>
 <div id="map"></div>
 <main id="list"></main>
@@ -299,7 +303,8 @@ function relIn(a) {
 let firstPref = null;
 const isSthlm = sig => sig === 'Cst' || sig === 'Sci';
 const NOISE = /biljett|stannar ej|resa förbi|långt tåg|kort tåg/i;
-const LONG = /långt tåg/i, SHORT = /kort tåg/i;   // Hinweise, die nicht interessieren
+const LONG = /långt tåg/i, SHORT = /kort tåg/i;
+const trainInfos = anns => anns.filter(Boolean).flatMap(a => [...txt(a.OtherInformation), ...txt(a.Deviation), ...txt(a.TrainComposition)]);   // Hinweise, die nicht interessieren
 // nur Pendeltåg werden abgeblendet
 const preferred = t => !/pendelt/i.test(txt(t.dep.ProductInformation).join(' '));
 const prodName = a => { const p = txt(a.ProductInformation).join(' '); return /pendelt/i.test(p) ? 'SL' : p || 'Zug'; };
@@ -347,7 +352,7 @@ function card(t) {
   for (const m of sm) det.push(`<p><b>ℹ️ ${esc(name(m.LocationCode))}</b>${esc(m.FreeText)}</p>`);
   for (const a of [dep, arr]) if (planned(a)) det.push(`<p><b>🚧 Geplante Fahrplanänderung</b>${esc(name(a.LocationSignature))}: ${hm(a.PlannedEstimatedTimeAtLocation)} statt ${hm(a.AdvertisedTimeAtLocation)}</p>`);
   if (prelim(dep) || prelim(arr)) det.push(`<p><b>≈ Prognose vorläufig</b>Die Zeit ist eine grobe Schätzung und kann sich noch deutlich ändern.</p>`);
-  const infos = [dep, arr].flatMap(a => [...txt(a.OtherInformation), ...txt(a.Deviation)]);
+  const infos = trainInfos([dep, arr, ...(t.stops || []).flatMap(x => [x.arr, x.dep])]);
   const long = infos.some(x => LONG.test(x)), short = !long && infos.some(x => SHORT.test(x));
   const icons = (tm.length ? '⚠️' : '') + (sm.length ? 'ℹ️' : '') + (planned(dep) || planned(arr) ? '🚧' : '');
   const devs = [...new Set([...txt(dep.Deviation), ...txt(arr.Deviation)])].filter(x => !NOISE.test(x));
@@ -423,6 +428,90 @@ function nearestWx(pts, ll) {
   return {temp: Math.round(val(o.Air.Temperature)), icon: snow ? '❄️' : wet ? '🌧' : '', wind: wind != null ? Math.round(wind) : null, name: best.Name};
 }
 
+// ---------- Unterwegs-Modus (im Zug zwischen Knivsta und Stockholm) ----------
+// Bahnstrecke grob: Knivsta – Arlanda C – Rosersberg – Upplands Väsby – Sollentuna – Solna – Stockholm C
+const LINE = [[59.7258, 17.7866], [59.6497, 17.9289], [59.585, 17.885], [59.5186, 17.9116], [59.4283, 17.9484], [59.3654, 18.0102], [59.3307, 18.0586]];
+function distToLine(p) {
+  const kx = 111.32 * Math.cos(p.lat * Math.PI / 180), ky = 110.57;
+  let best = 1e9;
+  for (let i = 1; i < LINE.length; i++) {
+    const ax = (LINE[i - 1][1] - p.lon) * kx, ay = (LINE[i - 1][0] - p.lat) * ky, bx = (LINE[i][1] - p.lon) * kx, by = (LINE[i][0] - p.lat) * ky;
+    const dx = bx - ax, dy = by - ay, u = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy)));
+    best = Math.min(best, Math.hypot(ax + u * dx, ay + u * dy));
+  }
+  return best;
+}
+const inCorridor = p => distToLine(p) < 3 && km(p, KNIVSTA) > 1.5 && km(p, STHLM) > 2.5;
+const ENDS = ['Kn', 'Cst', 'Sci'];
+state.travel = null;    // {ident, dest, stops, pos, others, cands}
+const traveling = () => state.mode === 'auto' && state.travel && state.travel.dest;
+
+// match=true: Zug suchen, dessen GPS-Position am nächsten an meinem Standort liegt
+async function loadTravel(match) {
+  const tv = state.travel;
+  if (match || !tv.cands || Date.now() - tv.candTs > 300e3) {
+    const res = await postTA(() => [queryXml('TrainAnnouncement', `<AND>${eq('ActivityType', 'Ankomst')}${eq('Advertised', 'true')}${anyOf('LocationSignature', ENDS)}<GT name="AdvertisedTimeAtLocation" value="$dateadd(-00:30:00)"/><LT name="AdvertisedTimeAtLocation" value="$dateadd(01:30:00)"/></AND>`)]);
+    tv.cands = res[0].TrainAnnouncement || []; tv.candTs = Date.now();
+  }
+  const pos = await posQuery([...new Set(tv.cands.map(a => a.AdvertisedTrainIdent))], 5);
+  if (match) {
+    let best = null, bd = 2;
+    for (const p of pos) { const d = km(p, state.here); if (d < bd) { bd = d; best = p; } }
+    if (!best) return false;
+    tv.ident = best.n;
+  }
+  const res = await postTA(() => [queryXml('TrainAnnouncement', `<AND>${eq('Advertised', 'true')}${eq('AdvertisedTrainIdent', tv.ident)}<GT name="AdvertisedTimeAtLocation" value="$dateadd(-04:00:00)"/><LT name="AdvertisedTimeAtLocation" value="$dateadd(03:00:00)"/></AND>`, 'orderby="AdvertisedTimeAtLocation"')]);
+  const bySig = new Map();
+  for (const a of res[0].TrainAnnouncement || []) {
+    let x = bySig.get(a.LocationSignature);
+    if (!x) bySig.set(a.LocationSignature, x = {sig: a.LocationSignature});
+    x[a.ActivityType === 'Ankomst' ? 'arr' : 'dep'] = a;
+  }
+  const stops = [...bySig.values()].sort((x, y) => new Date((x.arr || x.dep).AdvertisedTimeAtLocation) - new Date((y.arr || y.dep).AdvertisedTimeAtLocation));
+  const di = stops.findIndex(x => ENDS.includes(x.sig) && x.arr && !x.arr.TimeAtLocation);   // nächster noch nicht erreichter Endpunkt = Ziel
+  if (di < 0) return false;
+  const ni = stops.findIndex(x => !(x.arr && x.arr.TimeAtLocation) && !(x.dep && x.dep.TimeAtLocation));
+  tv.stops = stops.slice(Math.max(0, ni), di + 1); tv.dest = stops[di]; tv.all = stops;
+  tv.pos = pos.find(p => p.n === tv.ident) || null;
+  // andere Züge zwischen mir und dem Ziel (Rechteck um beide, 1,5 km Rand)
+  const me = tv.pos || state.here, ds = STATION_POS[tv.dest.sig];
+  const la = [Math.min(me.lat, ds[0]) - 0.014, Math.max(me.lat, ds[0]) + 0.014], lo = [Math.min(me.lon, ds[1]) - 0.027, Math.max(me.lon, ds[1]) + 0.027];
+  tv.others = pos.filter(p => p.n !== tv.ident && p.lat > la[0] && p.lat < la[1] && p.lon > lo[0] && p.lon < lo[1]);
+  tv.ts = Date.now();
+  return true;
+}
+function travelPanel() {
+  const tv = state.travel, a = tv.dest.arr, any = tv.all.map(x => x.dep || x.arr).find(Boolean) || a;
+  const infos = trainInfos(tv.all.flatMap(x => [x.arr, x.dep]));
+  const long = infos.some(x => LONG.test(x)), short = !long && infos.some(x => SHORT.test(x));
+  const devs = [...new Set(txt(a.Deviation))].filter(x => !NOISE.test(x));
+  const next = tv.stops[0];
+  const minor = /pendelt/i.test(txt(any.ProductInformation).join(' '));
+  let h = `<div class="card travel open${minor ? ' minor' : ''}">
+    <div class="r1">${timeHtml(a)}<span class="dur">an ${esc(name(tv.dest.sig))}</span>
+      ${isSthlm(tv.dest.sig) ? `<span class="trk"><small>${tv.dest.sig === 'Sci' ? 'City' : 'Sthlm'} Gl.</small>${esc(a.TrackAtLocation || '–')}</span>` : ''}</div>
+    <div class="r2"><span class="in">${relIn(a)}</span> · <b>${esc(prodName(any))} ${esc(tv.ident)}</b>${long ? '<span class="tag">Långt tåg</span>' : short ? '<span class="tag short">Kort tåg</span>' : ''}
+      ${tv.pos && tv.pos.speed != null ? ` · <b>${tv.pos.speed} km/h</b>` : ''}${tv.pos ? ` · GPS ${hm(tv.pos.ts)}` : ''}</div>`;
+  if (next && next !== tv.dest) h += `<div class="r2">nächster Halt <b>${esc(name(next.sig))}</b> ${stopTime(next.arr || next.dep)}</div>`;
+  if (devs.length) h += `<div class="dev">${devs.map(esc).join(' · ')}</div>`;
+  h += `<ol class="stops">` + tv.stops.map((x, k) => `<li class="${k === tv.stops.length - 1 ? 'end' : ''}"><span class="n">${esc(name(x.sig))}</span><span class="tm">${stopTime(x.arr || x.dep)}</span></li>`).join('') + `</ol>`;
+  if (tv.others.length) h += `<div class="r2" style="margin-top:6px">${tv.others.length > 1 ? tv.others.length + ' weitere Züge' : '1 weiterer Zug'} zwischen dir und dem Ziel auf der Karte</div>`;
+  return h + `</div>`;
+}
+function drawTravel() {
+  const tv = state.travel;
+  mapLayer.clearLayers();
+  const prod = n => { const c = tv.cands.find(a => a.AdvertisedTrainIdent === n); return c ? prodName(c) : 'Zug'; };
+  for (const p of tv.others) {
+    const arrow = p.bearing != null ? `<i style="transform:rotate(${p.bearing}deg)">↑</i> ` : '';
+    L.marker([p.lat, p.lon], {icon: L.divIcon({className: '', html: `<div class="tm-mk minor">${arrow}${esc(prod(p.n))} ${esc(p.n)}</div>`, iconSize: null, iconAnchor: [20, 10]})})
+      .bindPopup(`<b>${esc(prod(p.n))} ${esc(p.n)}</b><br>${p.speed != null ? p.speed + ' km/h · ' : ''}Stand ${hm(p.ts)}`).addTo(mapLayer);
+  }
+  const me = tv.pos || state.here, a = tv.dest.arr, d = delayMin(a);
+  L.marker([me.lat, me.lon], {zIndexOffset: 1000, icon: L.divIcon({className: '', html: `<div class="tm-mk mine${d > 0 ? ' late' : ''}"><span class="me-dot"></span>${tv.pos && tv.pos.speed != null ? tv.pos.speed + ' km/h' : esc(tv.ident)}</div>`, iconSize: null, iconAnchor: [20, 10]})}).addTo(mapLayer);
+  if (!state.userPanned) map.fitBounds([[me.lat, me.lon], STATION_POS[tv.dest.sig]], {padding: [36, 36], maxZoom: 14, animate: false});
+}
+
 // ---------- Karte (Live-Positionen) ----------
 const STATION_POS = {Kn: [59.7258, 17.7866], Cst: [59.3307, 18.0586], Sci: [59.3313, 18.0596]};
 let map = null, mapLayer = null, leafletP = null, tiles = null;
@@ -445,10 +534,10 @@ function loadLeaflet() {
     js.onload = ok; js.onerror = () => { leafletP = null; fail(new Error('Karte konnte nicht geladen werden')); }; document.head.appendChild(js);
   }));
 }
-async function loadPositions(data) {
-  const nums = [...new Set(data.trains.map(t => t.dep.AdvertisedTrainIdent))];
+const loadPositions = data => posQuery([...new Set(data.trains.map(t => t.dep.AdvertisedTrainIdent))], 10);
+async function posQuery(nums, maxAgeMin) {
   if (!nums.length) return [];
-  const res = await post([`<QUERY objecttype="TrainPosition" namespace="järnväg.trafikinfo" schemaversion="1.1"><FILTER><AND>${anyOf('Train.AdvertisedTrainNumber', nums)}<GT name="TimeStamp" value="$dateadd(-00:10:00)"/></AND></FILTER></QUERY>`]);
+  const res = await post([`<QUERY objecttype="TrainPosition" namespace="järnväg.trafikinfo" schemaversion="1.1"><FILTER><AND>${anyOf('Train.AdvertisedTrainNumber', nums)}<GT name="TimeStamp" value="$dateadd(-00:${String(maxAgeMin).padStart(2, '0')}:00)"/></AND></FILTER></QUERY>`]);
   const latest = new Map();
   for (const p of res[0].TrainPosition || []) {
     const n = p.Train && p.Train.AdvertisedTrainNumber, m = /POINT\s*\(\s*([\d.]+)\s+([\d.]+)/.exec(p.Position && p.Position.WGS84 || '');
@@ -458,8 +547,8 @@ async function loadPositions(data) {
   }
   return [...latest.values()];
 }
-async function drawMap() {   // nur Züge aus dem Live-Fenster
-  if (!state.data) return;
+async function drawMap() {   // nur Züge aus dem Live-Fenster bzw. Unterwegs-Ansicht
+  if (!state.data && !traveling()) return;
   try { await loadLeaflet(); } catch (e) { $('#map').textContent = e.message; return; }
   if (!map) {
     map = L.map('map', {zoomControl: false, attributionControl: true}).setView([59.53, 17.93], 9);
@@ -471,8 +560,11 @@ async function drawMap() {   // nur Züge aus dem Live-Fenster
     $('#map').addEventListener('touchstart', e => { if (e.touches.length > 1) state.userPanned = true; }, {passive: true});
   }
   map.invalidateSize();
+  if (traveling()) return drawTravel();
+  if (!state.data) return;
   let pos = [];
   try { pos = await loadPositions(state.data); } catch {}
+  if (traveling()) return drawTravel();      // inzwischen in den Unterwegs-Modus gewechselt
   mapLayer.clearLayers();
   const pts = [];
   if (state.here) L.marker([state.here.lat, state.here.lon], {icon: L.divIcon({className: '', html: '<div class="me-mk"></div>', iconSize: [20, 20]})}).addTo(mapLayer);
@@ -489,8 +581,8 @@ async function drawMap() {   // nur Züge aus dem Live-Fenster
   for (const sig of route().from) if (STATION_POS[sig]) pts.push(STATION_POS[sig]);
   if (!state.userPanned) {
     if (pts.length > 2 || (pts.length === 2 && km({lat: pts[0][0], lon: pts[0][1]}, {lat: pts[1][0], lon: pts[1][1]}) > 0.5))
-      map.fitBounds(pts, {padding: [28, 28], maxZoom: 13});
-    else map.setView(pts[0], 13);
+      map.fitBounds(pts, {padding: [28, 28], maxZoom: 13, animate: false});
+    else map.setView(pts[0], 13, {animate: false});
   }
   $('#map').dataset.count = pos.length;
 }
@@ -505,6 +597,12 @@ function render() {
   if (!state.key) {
     L.innerHTML = `<div class="msg">Bitte zuerst unter ⚙︎ den kostenlosen Trafikverket-API-Schlüssel eintragen.</div>`;
     $('#settings').classList.add('open');
+    return;
+  }
+  $('#map').classList.toggle('big', !!traveling());
+  if (traveling()) {
+    $('#upd').textContent = state.error ? '' : '· ' + new Date(state.travel.ts).toLocaleTimeString('sv-SE', {hour: '2-digit', minute: '2-digit'});
+    L.innerHTML = travelPanel();
     return;
   }
   const data = state.data;
@@ -565,6 +663,7 @@ const moreObs = 'IntersectionObserver' in window ? new IntersectionObserver(es =
 let seq = 0;
 async function refresh() {
   if (!state.key) return render();
+  if (traveling()) return refreshTravel();
   const my = ++seq, d = dir();
   state.busy = true; render();
   try {
@@ -584,6 +683,13 @@ async function refresh() {
   state.busy = false; render();
 }
 
+async function refreshTravel() {
+  let ok = false;
+  try { ok = await loadTravel(false); } catch {}
+  if (!traveling()) return;
+  if (!ok) { state.travel = null; state.userPanned = false; locate(); return; }   // angekommen oder Zug verloren
+  render(); drawMap();
+}
 function km(a, b) {
   const r = Math.PI / 180, dLat = (b.lat - a.lat) * r, dLon = (b.lon - a.lon) * r;
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLon / 2) ** 2;
@@ -598,12 +704,21 @@ function noLocation(why) {
 function locate() {
   if (!navigator.geolocation) return noLocation('kein GPS');
   state.locText = '📍 …'; render();
-  navigator.geolocation.getCurrentPosition(p => {
+  navigator.geolocation.getCurrentPosition(async p => {
     const here = state.here = {lat: p.coords.latitude, lon: p.coords.longitude};
+    const wasTravel = !!traveling();
+    state.travel = null;
+    if (state.mode === 'auto' && state.key && inCorridor(here)) {
+      state.travel = {};
+      let ok = false;
+      try { ok = await loadTravel(true); } catch {}
+      if (ok && state.mode === 'auto') { state.locText = '🚆 unterwegs'; state.userPanned = false; render(); drawMap(); return; }
+      state.travel = null;
+    }
     const dk = km(here, KNIVSTA), ds = km(here, STHLM);
     const nd = dk <= KNIVSTA_RADIUS_KM || dk < ds ? 'toSt' : 'toKn';
     state.locText = nd === 'toSt' ? '📍 Knivsta' : '📍 Sthlm';
-    const changed = nd !== state.autoDir;
+    const changed = nd !== state.autoDir || wasTravel;
     state.autoDir = nd; ls.set('autoDir', nd); ls.set('autoDirTs', Date.now());
     if (state.mode === 'auto' && changed) { state.userPanned = false; state.extra.wxFor = ''; useCache(); refresh(); } else render();
   }, () => noLocation('kein Standort'),
@@ -681,7 +796,7 @@ function useCache() {
 
 document.getElementById('seg').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
-  state.mode = b.dataset.d; ls.set('mode', state.mode); state.userPanned = false; state.extra.wxFor = '';
+  state.mode = b.dataset.d; ls.set('mode', state.mode); state.userPanned = false; state.extra.wxFor = ''; state.travel = null;
   if (state.mode === 'auto') locate();
   useCache(); render(); refresh();
 });
