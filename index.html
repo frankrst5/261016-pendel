@@ -139,7 +139,7 @@ a{color:var(--acc)}
   <label for="mapstyle">Kartenstil</label>
   <select id="mapstyle"><option value="auto">automatisch (wie iPhone hell/dunkel)</option><option value="light">immer hell</option><option value="dark">immer dunkel</option></select>
   <label class="chk"><input id="city" type="checkbox"> Pendeltåg über Stockholm City einbeziehen</label>
-  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 30</span></div>
+  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 31</span></div>
   <div id="diag" style="font-size:11px;color:var(--mute);margin-top:8px"></div>
 </div>
 <div id="map"></div>
@@ -963,7 +963,7 @@ setInterval(() => { if (!document.hidden && !state.busy) render(); }, 15e3);
 
 useCache(); render(); refresh();
 if (state.mode === 'auto') locate();
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js', {updateViaCache: 'none'}).catch(() => {});
 </script>
 </body>
 </html>
