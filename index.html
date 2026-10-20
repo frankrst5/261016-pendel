@@ -107,6 +107,7 @@ ol.stops .late{color:var(--late);font-weight:600}
 .seg{display:flex;gap:6px;flex:1}
 .seg button{flex:1;padding:6px 4px;font-size:13px;white-space:nowrap}
 .seg button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.seg button.manual{box-shadow:inset 0 0 0 2px #fff}
 a{color:var(--acc)}
 </style>
 </head>
@@ -115,7 +116,7 @@ a{color:var(--acc)}
 <div class="top">
   <button id="btnSettings" aria-label="Einstellungen">⚙︎</button>
   <div class="seg" id="seg">
-    <button data-d="auto">📍 Auto</button>
+    <button data-d="travel">🚆 Unterwegs</button>
     <button data-d="toSt">→ Sthlm</button>
     <button data-d="toKn">→ Knivsta</button>
   </div>
@@ -132,7 +133,7 @@ a{color:var(--acc)}
   <label for="mapstyle">Kartenstil</label>
   <select id="mapstyle"><option value="auto">automatisch (wie iPhone hell/dunkel)</option><option value="light">immer hell</option><option value="dark">immer dunkel</option></select>
   <label class="chk"><input id="city" type="checkbox"> Pendeltåg über Stockholm City einbeziehen</label>
-  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 27</span></div>
+  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 28</span></div>
   <div id="diag" style="font-size:11px;color:var(--mute);margin-top:8px"></div>
 </div>
 <div id="map"></div>
@@ -159,7 +160,7 @@ const state = {
   ckey: ls.get('ckey', ''),
   mapstyle: ls.get('mapstyle', 'auto'),
   city: ls.get('city', true),
-  mode: ls.get('mode', 'auto'),          // auto | toKn | toSt
+  mode: 'auto',                          // auto | toKn | toSt (Handwahl gilt nur bis zur nächsten längeren Pause)
   autoDir: ls.get('autoDirTs', 0) > Date.now() - 2 * 3600e3 ? ls.get('autoDir', 'toSt') : timeDir(),
   locText: '',
   schema: ls.get('schema', '2.0'),
@@ -471,7 +472,7 @@ async function loadTravel(match) {
       if (slack < bs) { bs = slack; bd = d; best = p; }
     }
     diag.cands = tv.cands.length; diag.pos = pos.length; diag.nearest = best ? `${best.n} ${bd.toFixed(1)} km, GPS ${hm(best.ts)}` : '–';
-    if (!best || bs > 1.5 + (diag.acc || 0) / 1000) return false;
+    if (!best || bs > (state.forceTravel ? 4 : 1.5) + (diag.acc || 0) / 1000) return false;
     tv.ident = best.n;
   }
   const res = await postTA(() => [queryXml('TrainAnnouncement', `<AND>${eq('Advertised', 'true')}${eq('AdvertisedTrainIdent', tv.ident)}<GT name="AdvertisedTimeAtLocation" value="$dateadd(-04:00:00)"/><LT name="AdvertisedTimeAtLocation" value="$dateadd(03:00:00)"/></AND>`, 'orderby="AdvertisedTimeAtLocation"')]);
@@ -608,9 +609,13 @@ async function drawMap() {   // nur Züge aus dem Live-Fenster bzw. Unterwegs-An
 
 function render() {
   const rt = route();
-  document.querySelectorAll('#seg button').forEach(b => b.classList.toggle('on', b.dataset.d === state.mode));
+  const eff = traveling() ? 'travel' : dir();
+  document.querySelectorAll('#seg button').forEach(b => {
+    b.classList.toggle('on', b.dataset.d === eff);
+    b.classList.toggle('manual', b.dataset.d === eff && state.mode !== 'auto');
+  });
   const wx = state.extra && state.extra.wx;
-  $('#loc').innerHTML = esc(state.mode === 'auto' ? state.locText : 'manuell') +
+  $('#loc').innerHTML = esc(state.mode === 'auto' ? state.locText : '✋ manuell') +
     (wx ? `<span class="wx" title="${esc(wx.name || '')}">${wx.icon}${wx.temp}°${wx.wind != null && wx.wind >= 8 ? ' 💨' + wx.wind + ' m/s' : ''}</span>` : '');
   const L = $('#list');
   if (!state.key) {
@@ -706,7 +711,7 @@ async function refreshTravel() {
   let ok = false;
   try { ok = await loadTravel(false); } catch {}
   if (!traveling()) return;
-  if (!ok) { state.travel = null; state.userPanned = false; locate(); return; }   // angekommen oder Zug verloren
+  if (!ok) { state.travel = null; state.forceTravel = false; state.userPanned = false; locate(); return; }   // angekommen oder Zug verloren
   render(); drawMap();
 }
 function km(a, b) {
@@ -731,7 +736,7 @@ async function handlePos(p) {
   const moving = p.coords.speed == null || p.coords.speed < 0 || p.coords.speed > 3;
   const corridor = state.mode === 'auto' && state.key && inCorridor(here, p.coords.accuracy) && p.coords.accuracy < 1500 && moving;
   Object.assign(diag, {fix: hm(p.timestamp), acc: Math.round(p.coords.accuracy), line: distToLine(here).toFixed(1), corridor, speed: p.coords.speed, cands: '–', pos: '–', nearest: '–'});
-  if (corridor && traveling()) return;               // schon im Unterwegs-Modus
+  if ((corridor || state.forceTravel) && traveling()) return;   // schon im Unterwegs-Modus
   const wasTravel = !!traveling();
   state.travel = null;
   if (corridor) {
@@ -846,11 +851,29 @@ function useCache() {
   if (c && Date.now() - c.ts < 15 * 60e3) state.data = c;
 }
 
+// Unterwegs von Hand: nächsten Zug zur eigenen Position suchen, auch abseits der erkannten Strecke
+async function manualTravel() {
+  state.mode = 'auto'; state.forceTravel = true; state.userPanned = false;
+  state.locText = '🚆 suche Zug…'; render();
+  refineLocation();
+  for (let i = 0; i < 20 && !state.here; i++) await new Promise(r => setTimeout(r, 500));
+  if (!state.here) { state.forceTravel = false; state.locText = '🚆 kein Standort'; return render(); }
+  state.travel = {};
+  let ok = false;
+  try { ok = await loadTravel(true); } catch {}
+  if (ok && state.forceTravel) { state.locText = '🚆 unterwegs'; render(); drawMap(); return; }
+  state.travel = null; state.forceTravel = false;
+  state.locText = '🚆 kein Zug in der Nähe'; render();
+}
 document.getElementById('seg').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
-  state.mode = b.dataset.d; ls.set('mode', state.mode); state.userPanned = false; state.extra.wxFor = ''; state.travel = null;
-  if (state.mode !== 'auto') stopWatch();
-  if (state.mode === 'auto') locate();
+  const d = b.dataset.d;
+  state.userPanned = false; state.extra.wxFor = '';
+  if (d === 'travel') return manualTravel();
+  state.travel = null; state.forceTravel = false;
+  // Richtung von Hand festlegen; nochmal auf die von Hand gewählte Richtung tippen = zurück zur Automatik
+  if (state.mode === d) { state.mode = 'auto'; locate(); }
+  else { state.mode = d; stopWatch(); }
   useCache(); render(); refresh();
 });
 $('#btnSettings').onclick = () => {
@@ -878,7 +901,7 @@ $('#list').addEventListener('click', e => {
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => setTiles());
 let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => { if (document.hidden) { hiddenAt = Date.now(); stopWatch(); return; } if (!document.hidden) {
-  if (hiddenAt && Date.now() - hiddenAt > 10 * 60e3 && state.travel) { state.travel = null; useCache(); render(); }
+  if (hiddenAt && Date.now() - hiddenAt > 10 * 60e3) { state.travel = null; state.forceTravel = false; state.mode = 'auto'; useCache(); render(); }
   setTiles(); if (state.more && Date.now() - state.more.base > 30 * 60e3) state.more = null; if (state.mode === 'auto') locate(); refresh(); } });
 setInterval(() => { if (!document.hidden) refresh(); }, 30e3);
 
