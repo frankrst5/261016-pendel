@@ -132,7 +132,7 @@ a{color:var(--acc)}
   <label for="mapstyle">Kartenstil</label>
   <select id="mapstyle"><option value="auto">automatisch (wie iPhone hell/dunkel)</option><option value="light">immer hell</option><option value="dark">immer dunkel</option></select>
   <label class="chk"><input id="city" type="checkbox"> Pendeltåg über Stockholm City einbeziehen</label>
-  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 24</span></div>
+  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 25</span></div>
   <div id="diag" style="font-size:11px;color:var(--mute);margin-top:8px"></div>
 </div>
 <div id="map"></div>
@@ -306,6 +306,7 @@ let firstPref = null;
 const isSthlm = sig => sig === 'Cst' || sig === 'Sci';
 const NOISE = /biljett|stannar ej|resa förbi|långt tåg|kort tåg/i;
 const LONG = /långt tåg/i, SHORT = /kort tåg/i;
+const SL_ONLY = /pendeltåg|sl\.se|\bSL\b/i, OTHER_ONLY = /mälartåg|\bSJ\b|upptåget/i;
 const trainInfos = anns => anns.filter(Boolean).flatMap(a => [...txt(a.OtherInformation), ...txt(a.Deviation), ...txt(a.TrainComposition)]);   // Hinweise, die nicht interessieren
 // nur Pendeltåg werden abgeblendet
 const preferred = t => !/pendelt/i.test(txt(t.dep.ProductInformation).join(' '));
@@ -331,12 +332,13 @@ function trainMsgs(t) {
 function stationMsgs(t) {
   const st = isSthlm(t.dep.LocationSignature) ? t.dep : t.arr;
   const re = new RegExp(`knivsta|uppsala|märsta|arlanda${st.TrackAtLocation ? `|spår ${st.TrackAtLocation}\\b` : ''}`, 'i');
-  const now = Date.now(), seen = new Set();
+  const now = Date.now(), seen = new Set(), sl = !preferred(t);
   return (state.extra.station || []).filter(m => {
     if (m.StartDateTime && new Date(m.StartDateTime) > now + 3 * 3600e3) return false;
     if (m.EndDateTime && new Date(m.EndDateTime) < now) return false;
     if (m.LocationCode !== t.dep.LocationSignature && m.LocationCode !== t.arr.LocationSignature) return false;
     if (isSthlm(m.LocationCode) && !re.test(m.FreeText || '')) return false;
+    if ((sl ? OTHER_ONLY : SL_ONLY).test(m.FreeText || '')) return false;   // Meldung gilt nur für die andere Zugart
     if (!m.FreeText || seen.has(m.FreeText)) return false;
     seen.add(m.FreeText); return true;
   });
