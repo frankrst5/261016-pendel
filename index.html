@@ -139,7 +139,7 @@ a{color:var(--acc)}
   <label for="mapstyle">Kartenstil</label>
   <select id="mapstyle"><option value="auto">automatisch (wie iPhone hell/dunkel)</option><option value="light">immer hell</option><option value="dark">immer dunkel</option></select>
   <label class="chk"><input id="city" type="checkbox"> Pendeltåg über Stockholm City einbeziehen</label>
-  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 34</span></div>
+  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 35</span></div>
   <div id="diag" style="font-size:11px;color:var(--mute);margin-top:8px"></div>
 </div>
 <div id="map"></div>
@@ -317,6 +317,8 @@ const SL_ONLY = /pendeltåg|sl\.se|\bSL\b/i, OTHER_ONLY = /mälartåg|\bSJ\b|upp
 const trainInfos = anns => anns.filter(Boolean).flatMap(a => [...txt(a.OtherInformation), ...txt(a.Deviation), ...txt(a.TrainComposition)]);   // Hinweise, die nicht interessieren
 // nur Pendeltåg werden abgeblendet
 const preferred = t => !/pendelt/i.test(txt(t.dep.ProductInformation).join(' '));
+// Endbahnhof eines Zuges als Zusatzzeile für Karten-Popups
+const destLine = sig => sig ? `<br>→ ${esc(name(sig))}` : '';
 const prodName = a => { const p = txt(a.ProductInformation).join(' '); return /pendelt/i.test(p) ? 'SL' : p || 'Zug'; };
 
 // Störungen, die diesen Zug wirklich betreffen: mind. ein Ort auf der eigenen Teilstrecke außerhalb von Stockholm C/City,
@@ -466,7 +468,12 @@ async function lineTrains(tv) {
   if (miss.length) {
     const res = await postTA(() => [queryXml('TrainAnnouncement', `<AND>${eq('Advertised', 'true')}${anyOf('AdvertisedTrainIdent', miss)}<GT name="AdvertisedTimeAtLocation" value="$dateadd(-01:00:00)"/><LT name="AdvertisedTimeAtLocation" value="$dateadd(01:00:00)"/></AND>`, 'limit="400"')]);
     for (const n of miss) tv.prods[n] = null;
-    for (const a of res[0].TrainAnnouncement || []) if (!tv.prods[a.AdvertisedTrainIdent]) tv.prods[a.AdvertisedTrainIdent] = prodName(a);
+    tv.dests = tv.dests || {};
+    for (const a of res[0].TrainAnnouncement || []) {
+      if (!tv.prods[a.AdvertisedTrainIdent]) tv.prods[a.AdvertisedTrainIdent] = prodName(a);
+      const to = (a.ToLocation || [])[0];
+      if (to && to.LocationName) tv.dests[a.AdvertisedTrainIdent] = to.LocationName;
+    }
     if (!tv.prodTs || Date.now() - tv.prodTs >= 600e3) tv.prodTs = Date.now();
   }
   return pos.filter(p => tv.prods[p.n]);
@@ -549,7 +556,7 @@ function drawTravel() {
   for (const p of tv.others) {
     const arrow = p.bearing != null ? `<i style="transform:rotate(${p.bearing}deg)">↑</i> ` : '';
     L.marker([p.lat, p.lon], {icon: L.divIcon({className: '', html: `<div class="tm-mk minor">${arrow}${esc(prod(p.n))} ${esc(p.n)}</div>`, iconSize: null, iconAnchor: [20, 10]})})
-      .bindPopup(`<b>${esc(prod(p.n))} ${esc(p.n)}</b><br>${p.speed != null ? p.speed + ' km/h · ' : ''}Stand ${hm(p.ts)}`).addTo(mapLayer);
+      .bindPopup(`<b>${esc(prod(p.n))} ${esc(p.n)}</b>${destLine((tv.dests || {})[p.n] || (((tv.cands.find(a => a.AdvertisedTrainIdent === p.n) || {}).ToLocation || [])[0] || {}).LocationName)}<br>${p.speed != null ? p.speed + ' km/h · ' : ''}Stand ${hm(p.ts)}`).addTo(mapLayer);
   }
   const me = tv.pos || state.here;
   L.marker([me.lat, me.lon], {zIndexOffset: 1000, icon: L.divIcon({className: '', html: `<div class="tm-mk mine"><span class="me-dot"></span>${tv.pos && tv.pos.speed != null ? tv.pos.speed + ' km/h' : esc(tv.ident)}</div>`, iconSize: null, iconAnchor: [20, 10]})}).addTo(mapLayer);
@@ -621,7 +628,7 @@ async function drawMap() {   // nur Züge aus dem Live-Fenster bzw. Unterwegs-An
     const arrow = p.bearing != null ? `<i style="transform:rotate(${p.bearing}deg)">↑</i> ` : '';
     const label = `${arrow}${hm(realT(t.dep) || t.dep.AdvertisedTimeAtLocation)}${d > 0 ? ' +' + d : ''}`;
     L.marker([p.lat, p.lon], {icon: L.divIcon({className: '', html: `<div class="tm-mk${preferred(t) ? '' : ' minor'}">${label}</div>`, iconSize: null, iconAnchor: [20, 10]})})
-      .bindPopup(`<b>${esc(prodName(t.dep))} ${esc(p.n)}</b><br>${p.speed != null ? p.speed + ' km/h · ' : ''}Stand ${hm(p.ts)}`).addTo(mapLayer);
+      .bindPopup(`<b>${esc(prodName(t.dep))} ${esc(p.n)}</b>${destLine(((t.dep.ToLocation || [])[0] || {}).LocationName)}<br>${p.speed != null ? p.speed + ' km/h · ' : ''}Stand ${hm(p.ts)}`).addTo(mapLayer);
     pts.push([p.lat, p.lon]);
   }
   // Startbahnhof + bereits fahrende Züge einpassen, solange nicht selbst verschoben/gezoomt wurde
