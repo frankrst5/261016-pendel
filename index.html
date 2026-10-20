@@ -87,6 +87,7 @@ ol.stops .late{color:var(--late);font-weight:600}
 .tm-mk.mine{background:var(--acc);font-size:12px;padding:2px 7px}
 .me-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#fff;border:2px solid #0a84ff;margin-right:4px;vertical-align:-1px}
 .card.travel{cursor:default}
+.pick{display:block;width:100%;text-align:left;margin-top:8px;padding:10px 12px}
 .comp{margin-top:6px;padding:6px 8px;border-radius:8px;background:var(--bg);font-size:13px}
 #map{height:32vh;border-radius:12px;border:1px solid var(--line);margin-bottom:8px;background:var(--card)}
 .tm-mk{background:var(--acc);color:#fff;border:2px solid #fff;border-radius:9px;padding:1px 5px;font:700 11px/1.3 -apple-system,system-ui,sans-serif;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.4)}
@@ -117,8 +118,8 @@ a{color:var(--acc)}
   <button id="btnSettings" aria-label="Einstellungen">⚙︎</button>
   <div class="seg" id="seg">
     <button data-d="travel">🚆 Unterwegs</button>
-    <button data-d="toSt">→ Sthlm</button>
-    <button data-d="toKn">→ Knivsta</button>
+    <button data-d="toSt">🚏 Knivsta</button>
+    <button data-d="toKn">🚏 Sthlm</button>
   </div>
 </div>
 <div class="meta"><span class="ml"><span id="loc"></span> <span id="upd"></span></span>
@@ -133,7 +134,7 @@ a{color:var(--acc)}
   <label for="mapstyle">Kartenstil</label>
   <select id="mapstyle"><option value="auto">automatisch (wie iPhone hell/dunkel)</option><option value="light">immer hell</option><option value="dark">immer dunkel</option></select>
   <label class="chk"><input id="city" type="checkbox"> Pendeltåg über Stockholm City einbeziehen</label>
-  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 28</span></div>
+  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 29</span></div>
   <div id="diag" style="font-size:11px;color:var(--mute);margin-top:8px"></div>
 </div>
 <div id="map"></div>
@@ -456,13 +457,16 @@ state.travel = null;    // {ident, dest, stops, pos, others, cands}
 const traveling = () => state.mode === 'auto' && state.travel && state.travel.dest;
 
 // match=true: Zug suchen, dessen GPS-Position am nächsten an meinem Standort liegt
-async function loadTravel(match) {
-  const tv = state.travel;
-  if (match || !tv.cands || Date.now() - tv.candTs > 300e3) {
+async function travelCands(tv, fresh) {
+  if (fresh || !tv.cands || Date.now() - tv.candTs > 300e3) {
     const res = await postTA(() => [queryXml('TrainAnnouncement', `<AND>${eq('ActivityType', 'Ankomst')}${eq('Advertised', 'true')}${anyOf('LocationSignature', ENDS)}<GT name="AdvertisedTimeAtLocation" value="$dateadd(-00:30:00)"/><LT name="AdvertisedTimeAtLocation" value="$dateadd(01:30:00)"/></AND>`)]);
     tv.cands = res[0].TrainAnnouncement || []; tv.candTs = Date.now();
   }
-  const pos = await posQuery([...new Set(tv.cands.map(a => a.AdvertisedTrainIdent))], 5);
+  return tv.allPos = await posQuery([...new Set(tv.cands.map(a => a.AdvertisedTrainIdent))], 5);
+}
+async function loadTravel(match) {
+  const tv = state.travel;
+  const pos = await travelCands(tv, match);
   if (match) {
     // Zug-GPS kann bis zu ein paar Minuten alt sein (bei 120 km/h = 2 km/min), daher großzügiger Radius
     let best = null, bd = 1e9, bs = 1e9;
@@ -624,6 +628,13 @@ function render() {
     return;
   }
   $('#map').classList.toggle('big', !!traveling());
+  if (state.pick) {
+    $('#upd').textContent = '';
+    L.innerHTML = `<div class="card travel open"><b>In welchem Zug sitzt du?</b>` +
+      (state.pick.list.length ? state.pick.list.map(a => `<button class="pick" data-pick="${esc(a.AdvertisedTrainIdent)}"><b>${esc(prodName(a))} ${esc(a.AdvertisedTrainIdent)}</b> → ${esc(name(a.LocationSignature))} an ${hm(realT(a) || a.AdvertisedTimeAtLocation)}</button>`).join('')
+        : '<div class="r2">Gerade kein Zug zwischen Knivsta und Stockholm unterwegs.</div>') + `</div>`;
+    return;
+  }
   if (traveling()) {
     $('#upd').textContent = state.error ? '' : '· ' + new Date(state.travel.ts).toLocaleTimeString('sv-SE', {hour: '2-digit', minute: '2-digit'});
     L.innerHTML = travelPanel();
@@ -857,18 +868,38 @@ async function manualTravel() {
   state.locText = '🚆 suche Zug…'; render();
   refineLocation();
   for (let i = 0; i < 20 && !state.here; i++) await new Promise(r => setTimeout(r, 500));
-  if (!state.here) { state.forceTravel = false; state.locText = '🚆 kein Standort'; return render(); }
-  state.travel = {};
+  const tv = state.travel = {};
   let ok = false;
-  try { ok = await loadTravel(true); } catch {}
+  try { ok = state.here ? await loadTravel(true) : false; } catch {}
   if (ok && state.forceTravel) { state.locText = '🚆 unterwegs'; render(); drawMap(); return; }
-  state.travel = null; state.forceTravel = false;
-  state.locText = '🚆 kein Zug in der Nähe'; render();
+  // Position reicht nicht: Züge, die gerade zwischen Knivsta und Stockholm unterwegs sind, zur Auswahl anbieten
+  state.travel = null;
+  if (!state.forceTravel) return;
+  try { if (!tv.allPos) await travelCands(tv, true); } catch {}
+  const onLine = new Set((tv.allPos || []).filter(p => distToLine(p) < 3).map(p => p.n));
+  const now = Date.now(), seen = new Set();
+  state.pick = {tv, list: (tv.cands || [])
+    .filter(a => !a.TimeAtLocation && new Date(realT(a) || a.AdvertisedTimeAtLocation) - now < 75 * 60e3)
+    .filter(a => !onLine.size || onLine.has(a.AdvertisedTrainIdent))
+    .sort((x, y) => new Date(realT(x) || x.AdvertisedTimeAtLocation) - new Date(realT(y) || y.AdvertisedTimeAtLocation))
+    .filter(a => !seen.has(a.AdvertisedTrainIdent) && seen.add(a.AdvertisedTrainIdent))
+    .slice(0, 10)};
+  state.locText = state.here ? '🚆 Zug nicht erkannt' : '🚆 kein Standort';
+  render();
+}
+async function pickTrain(n) {
+  const tv = state.pick.tv;
+  state.pick = null; tv.ident = n; state.travel = tv; state.forceTravel = true;
+  state.locText = '🚆 lade…'; render();
+  let ok = false;
+  try { ok = await loadTravel(false); } catch {}
+  if (!ok) { state.travel = null; state.forceTravel = false; state.locText = '🚆 Zug nicht gefunden'; return render(); }
+  state.locText = '🚆 unterwegs'; render(); drawMap();
 }
 document.getElementById('seg').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   const d = b.dataset.d;
-  state.userPanned = false; state.extra.wxFor = '';
+  state.userPanned = false; state.extra.wxFor = ''; state.pick = null;
   if (d === 'travel') return manualTravel();
   state.travel = null; state.forceTravel = false;
   // Richtung von Hand festlegen; nochmal auf die von Hand gewählte Richtung tippen = zurück zur Automatik
@@ -890,7 +921,9 @@ $('#btnSave').onclick = () => {
   $('#settings').classList.remove('open'); state.data = null; state.error = ''; refresh();
 };
 $('#list').addEventListener('click', e => {
-  const c = e.target.closest('.card'); if (!c) return;
+  const pk = e.target.closest('[data-pick]');
+  if (pk) return pickTrain(pk.dataset.pick);
+  const c = e.target.closest('.card'); if (!c || c.classList.contains('travel')) return;
   const id = c.dataset.id;
   state.open.has(id) ? state.open.delete(id) : state.open.add(id);
   c.classList.toggle('open');
@@ -901,7 +934,7 @@ $('#list').addEventListener('click', e => {
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => setTiles());
 let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => { if (document.hidden) { hiddenAt = Date.now(); stopWatch(); return; } if (!document.hidden) {
-  if (hiddenAt && Date.now() - hiddenAt > 10 * 60e3) { state.travel = null; state.forceTravel = false; state.mode = 'auto'; useCache(); render(); }
+  if (hiddenAt && Date.now() - hiddenAt > 10 * 60e3) { state.travel = null; state.forceTravel = false; state.pick = null; state.mode = 'auto'; useCache(); render(); }
   setTiles(); if (state.more && Date.now() - state.more.base > 30 * 60e3) state.more = null; if (state.mode === 'auto') locate(); refresh(); } });
 setInterval(() => { if (!document.hidden) refresh(); }, 30e3);
 

@@ -34,6 +34,6 @@ Unterwegs-Modus: Liegt der Standort auf der Strecke zwischen Knivsta und Stockho
 nächsten ist. Dann zeigt sie eine größere Karte mit diesem Zug (mit eigenem Punkt), dem Ziel und allen anderen Zügen dazwischen,
 darunter Ankunft, Gleis, Tempo, nächster Halt und restliche Halte. Ein Richtungsknopf beendet den Modus.
 
-Knöpfe: 🚆 Unterwegs (Zug in der Nähe von Hand suchen) · → Sthlm · → Knivsta. Die automatisch erkannte Richtung bzw. der
+Knöpfe: 🚆 Unterwegs (Zug in der Nähe von Hand suchen; ohne brauchbaren Standort Auswahlliste der Züge auf der Strecke) · 🚏 Knivsta · 🚏 Sthlm (Abfahrtsbahnhof). Die automatisch erkannte Richtung bzw. der
 Unterwegs-Modus ist blau markiert. Eine Richtung von Hand wählen überschreibt die Automatik (weißer Rand, „✋ manuell“);
 nochmal darauf tippen oder die App länger als 10 min im Hintergrund lassen schaltet zurück.
