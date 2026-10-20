@@ -132,7 +132,7 @@ a{color:var(--acc)}
   <label for="mapstyle">Kartenstil</label>
   <select id="mapstyle"><option value="auto">automatisch (wie iPhone hell/dunkel)</option><option value="light">immer hell</option><option value="dark">immer dunkel</option></select>
   <label class="chk"><input id="city" type="checkbox"> Pendeltåg über Stockholm City einbeziehen</label>
-  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 25</span></div>
+  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 26</span></div>
   <div id="diag" style="font-size:11px;color:var(--mute);margin-top:8px"></div>
 </div>
 <div id="map"></div>
@@ -530,16 +530,19 @@ function drawTravel() {
 
 // ---------- Karte (Live-Positionen) ----------
 const STATION_POS = {Kn: [59.7258, 17.7866], Cst: [59.3307, 18.0586], Sci: [59.3313, 18.0596]};
-let map = null, mapLayer = null, leafletP = null, tiles = null;
+let map = null, mapLayer = null, leafletP = null, tiles = null, tilesDark = null;
 // CARTO braucht seit 09/2026 einen Schlüssel; ohne Schlüssel OSM-Standardkarte
 function setTiles() {
   if (!map) return;
-  if (tiles) map.removeLayer(tiles);
   const dark = state.mapstyle === 'dark' || (state.mapstyle === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  if (tiles && dark === tilesDark && tiles.ckey === state.ckey) return;
+  if (tiles) map.removeLayer(tiles);
+  tilesDark = dark;
   tiles = state.ckey
     ? L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark ? 'dark_all' : 'rastertiles/voyager'}/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(state.ckey)}`,
         {maxZoom: 19, subdomains: 'abcd', attribution: '© OpenStreetMap © CARTO'})
     : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '© OpenStreetMap'});
+  tiles.ckey = state.ckey;
   tiles.addTo(map).bringToBack();
 }
 function loadLeaflet() {
@@ -861,9 +864,11 @@ $('#list').addEventListener('click', e => {
   if (t && !t.stops && state.open.has(id)) loadStops({trains: [t]}).then(render).catch(() => {});
 });
 
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => setTiles());
 let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => { if (document.hidden) { hiddenAt = Date.now(); return; } if (!document.hidden) {
-  if (hiddenAt && Date.now() - hiddenAt > 10 * 60e3 && state.travel) { state.travel = null; useCache(); render(); } if (state.more && Date.now() - state.more.base > 30 * 60e3) state.more = null; if (state.mode === 'auto') locate(); refresh(); } });
+  if (hiddenAt && Date.now() - hiddenAt > 10 * 60e3 && state.travel) { state.travel = null; useCache(); render(); }
+  setTiles(); if (state.more && Date.now() - state.more.base > 30 * 60e3) state.more = null; if (state.mode === 'auto') locate(); refresh(); } });
 setInterval(() => { if (!document.hidden) refresh(); }, 30e3);
 setInterval(() => { if (!document.hidden && state.mode === 'auto') refineLocation(); }, 120e3);   // unterwegs einsteigen erkennen
 setInterval(() => { if (!document.hidden && !state.busy) render(); }, 15e3);
