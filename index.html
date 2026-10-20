@@ -132,7 +132,7 @@ a{color:var(--acc)}
   <label for="mapstyle">Kartenstil</label>
   <select id="mapstyle"><option value="auto">automatisch (wie iPhone hell/dunkel)</option><option value="light">immer hell</option><option value="dark">immer dunkel</option></select>
   <label class="chk"><input id="city" type="checkbox"> Pendeltåg über Stockholm City einbeziehen</label>
-  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 26</span></div>
+  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 27</span></div>
   <div id="diag" style="font-size:11px;color:var(--mute);margin-top:8px"></div>
 </div>
 <div id="map"></div>
@@ -449,7 +449,7 @@ function distToLine(p) {
   }
   return best;
 }
-const inCorridor = p => distToLine(p) < 1 && km(p, KNIVSTA) > 1.5 && km(p, STHLM) > 2.5;
+const inCorridor = (p, acc = 0) => distToLine(p) < 1 + acc / 2000 && km(p, KNIVSTA) > 1.5 && km(p, STHLM) > 2.5;
 const ENDS = ['Kn', 'Cst', 'Sci'];
 state.travel = null;    // {ident, dest, stops, pos, others, cands}
 const traveling = () => state.mode === 'auto' && state.travel && state.travel.dest;
@@ -471,7 +471,7 @@ async function loadTravel(match) {
       if (slack < bs) { bs = slack; bd = d; best = p; }
     }
     diag.cands = tv.cands.length; diag.pos = pos.length; diag.nearest = best ? `${best.n} ${bd.toFixed(1)} km, GPS ${hm(best.ts)}` : '–';
-    if (!best || bs > 1.5) return false;
+    if (!best || bs > 1.5 + (diag.acc || 0) / 1000) return false;
     tv.ident = best.n;
   }
   const res = await postTA(() => [queryXml('TrainAnnouncement', `<AND>${eq('Advertised', 'true')}${eq('AdvertisedTrainIdent', tv.ident)}<GT name="AdvertisedTimeAtLocation" value="$dateadd(-04:00:00)"/><LT name="AdvertisedTimeAtLocation" value="$dateadd(03:00:00)"/></AND>`, 'orderby="AdvertisedTimeAtLocation"')]);
@@ -729,7 +729,7 @@ async function handlePos(p) {
   const here = state.here = {lat: p.coords.latitude, lon: p.coords.longitude};
   // in Bewegung oder Geschwindigkeit unbekannt, und Messung genau genug
   const moving = p.coords.speed == null || p.coords.speed < 0 || p.coords.speed > 3;
-  const corridor = state.mode === 'auto' && state.key && inCorridor(here) && p.coords.accuracy < 300 && moving;
+  const corridor = state.mode === 'auto' && state.key && inCorridor(here, p.coords.accuracy) && p.coords.accuracy < 1500 && moving;
   Object.assign(diag, {fix: hm(p.timestamp), acc: Math.round(p.coords.accuracy), line: distToLine(here).toFixed(1), corridor, speed: p.coords.speed, cands: '–', pos: '–', nearest: '–'});
   if (corridor && traveling()) return;               // schon im Unterwegs-Modus
   const wasTravel = !!traveling();
@@ -748,12 +748,22 @@ async function handlePos(p) {
   state.autoDir = nd; ls.set('autoDir', nd); ls.set('autoDirTs', Date.now());
   if (state.mode === 'auto' && changed) { state.userPanned = false; state.extra.wxFor = ''; useCache(); refresh(); } else render();
 }
-let refining = false;
+// Laufende genaue Ortung, solange die App sichtbar ist (einzelne Abfragen bleiben im Zug oft grob oder ohne Antwort)
+let watchId = null, lastHandled = null;
 function refineLocation() {
-  if (!navigator.geolocation || refining) return;
-  refining = true;
-  navigator.geolocation.getCurrentPosition(p => { refining = false; diag.err = ''; handlePos(p); },
-    e => { refining = false; diag.err = e.message || 'Code ' + e.code; }, {enableHighAccuracy: true, maximumAge: 0, timeout: 20000});
+  if (!navigator.geolocation || watchId != null) return;
+  watchId = navigator.geolocation.watchPosition(p => {
+    diag.err = '';
+    const c = p.coords, h = lastHandled;
+    // nur verarbeiten, wenn neu genug: 1 min vergangen, 300 m bewegt oder deutlich genauer
+    if (h && Date.now() - h.t < 60e3 && km({lat: c.latitude, lon: c.longitude}, h) < 0.3 && c.accuracy > h.acc * 0.5) return;
+    lastHandled = {t: Date.now(), lat: c.latitude, lon: c.longitude, acc: c.accuracy};
+    handlePos(p);
+  }, e => { diag.err = e.message || 'Code ' + e.code; }, {enableHighAccuracy: true, maximumAge: 15000, timeout: 30000});
+}
+function stopWatch() {
+  if (watchId != null) navigator.geolocation.clearWatch(watchId);
+  watchId = null; lastHandled = null;
 }
 // iOS antwortet bei zwei gleichzeitigen Anfragen manchmal gar nicht – deshalb erst schnell, danach genau; Wächter nach 7 s
 function locate() {
@@ -839,6 +849,7 @@ function useCache() {
 document.getElementById('seg').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   state.mode = b.dataset.d; ls.set('mode', state.mode); state.userPanned = false; state.extra.wxFor = ''; state.travel = null;
+  if (state.mode !== 'auto') stopWatch();
   if (state.mode === 'auto') locate();
   useCache(); render(); refresh();
 });
@@ -866,11 +877,11 @@ $('#list').addEventListener('click', e => {
 
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => setTiles());
 let hiddenAt = 0;
-document.addEventListener('visibilitychange', () => { if (document.hidden) { hiddenAt = Date.now(); return; } if (!document.hidden) {
+document.addEventListener('visibilitychange', () => { if (document.hidden) { hiddenAt = Date.now(); stopWatch(); return; } if (!document.hidden) {
   if (hiddenAt && Date.now() - hiddenAt > 10 * 60e3 && state.travel) { state.travel = null; useCache(); render(); }
   setTiles(); if (state.more && Date.now() - state.more.base > 30 * 60e3) state.more = null; if (state.mode === 'auto') locate(); refresh(); } });
 setInterval(() => { if (!document.hidden) refresh(); }, 30e3);
-setInterval(() => { if (!document.hidden && state.mode === 'auto') refineLocation(); }, 120e3);   // unterwegs einsteigen erkennen
+
 setInterval(() => { if (!document.hidden && !state.busy) render(); }, 15e3);
 
 useCache(); render(); refresh();
