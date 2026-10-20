@@ -1,5 +1,5 @@
 // App-Shell offline vorhalten; API-Aufrufe gehen immer ans Netz.
-const CACHE = 'pendel-v29';
+const CACHE = 'pendel-v30';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-180.png', 'icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))); self.skipWaiting(); });
 self.addEventListener('activate', e => {

@@ -87,7 +87,12 @@ ol.stops .late{color:var(--late);font-weight:600}
 .tm-mk.mine{background:var(--acc);font-size:12px;padding:2px 7px}
 .me-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#fff;border:2px solid #0a84ff;margin-right:4px;vertical-align:-1px}
 .card.travel{cursor:default}
-.pick{display:block;width:100%;text-align:left;margin-top:8px;padding:10px 12px}
+.pickgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px}
+.pick{display:block;width:100%;text-align:left;margin-top:6px;padding:8px 10px;font-size:13px}
+.pick .pt{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+.pick small{color:var(--late);font-weight:600}
+.pick.minor{color:var(--mute)}
+.pick.minor small{color:var(--mute)}
 .comp{margin-top:6px;padding:6px 8px;border-radius:8px;background:var(--bg);font-size:13px}
 #map{height:32vh;border-radius:12px;border:1px solid var(--line);margin-bottom:8px;background:var(--card)}
 .tm-mk{background:var(--acc);color:#fff;border:2px solid #fff;border-radius:9px;padding:1px 5px;font:700 11px/1.3 -apple-system,system-ui,sans-serif;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.4)}
@@ -134,7 +139,7 @@ a{color:var(--acc)}
   <label for="mapstyle">Kartenstil</label>
   <select id="mapstyle"><option value="auto">automatisch (wie iPhone hell/dunkel)</option><option value="light">immer hell</option><option value="dark">immer dunkel</option></select>
   <label class="chk"><input id="city" type="checkbox"> Pendeltåg über Stockholm City einbeziehen</label>
-  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 29</span></div>
+  <div class="row"><button id="btnSave">Speichern</button><span style="font-size:11px;color:var(--mute);align-self:center">Version 30</span></div>
   <div id="diag" style="font-size:11px;color:var(--mute);margin-top:8px"></div>
 </div>
 <div id="map"></div>
@@ -630,9 +635,13 @@ function render() {
   $('#map').classList.toggle('big', !!traveling());
   if (state.pick) {
     $('#upd').textContent = '';
-    L.innerHTML = `<div class="card travel open"><b>In welchem Zug sitzt du?</b>` +
-      (state.pick.list.length ? state.pick.list.map(a => `<button class="pick" data-pick="${esc(a.AdvertisedTrainIdent)}"><b>${esc(prodName(a))} ${esc(a.AdvertisedTrainIdent)}</b> → ${esc(name(a.LocationSignature))} an ${hm(realT(a) || a.AdvertisedTimeAtLocation)}</button>`).join('')
-        : '<div class="r2">Gerade kein Zug zwischen Knivsta und Stockholm unterwegs.</div>') + `</div>`;
+    const col = (title, list) => `<div><div class="r2"><b>${title}</b></div>` + (list.length ? list.map(x => {
+      const d = delayMin(x.dep);
+      return `<button class="pick${/pendelt/i.test(txt(x.dep.ProductInformation).join(' ')) ? ' minor' : ''}" data-pick="${esc(x.n)}"><span class="pt">${hm(x.dep.AdvertisedTimeAtLocation)}${d > 0 ? ` <small>+${d}</small>` : ''}</span><br>${esc(x.prod)} ${esc(x.n)}</button>`;
+    }).join('') : '<div class="r2">–</div>') + `</div>`;
+    const pl = state.pick.list;
+    L.innerHTML = `<div class="card travel open"><b>In welchem Zug sitzt du?</b><div class="pickgrid">` +
+      col('ab Knivsta', pl.filter(x => x.fromKn)) + col('ab Sthlm', pl.filter(x => !x.fromKn)) + `</div></div>`;
     return;
   }
   if (traveling()) {
@@ -876,16 +885,28 @@ async function manualTravel() {
   state.travel = null;
   if (!state.forceTravel) return;
   try { if (!tv.allPos) await travelCands(tv, true); } catch {}
-  const onLine = new Set((tv.allPos || []).filter(p => distToLine(p) < 3).map(p => p.n));
-  const now = Date.now(), seen = new Set();
-  state.pick = {tv, list: (tv.cands || [])
-    .filter(a => !a.TimeAtLocation && new Date(realT(a) || a.AdvertisedTimeAtLocation) - now < 75 * 60e3)
-    .filter(a => !onLine.size || onLine.has(a.AdvertisedTrainIdent))
-    .sort((x, y) => new Date(realT(x) || x.AdvertisedTimeAtLocation) - new Date(realT(y) || y.AdvertisedTimeAtLocation))
-    .filter(a => !seen.has(a.AdvertisedTrainIdent) && seen.add(a.AdvertisedTrainIdent))
-    .slice(0, 10)};
+  state.pick = {tv, list: await pickList(tv).catch(() => [])};
   state.locText = state.here ? '🚆 Zug nicht erkannt' : '🚆 kein Standort';
   render();
+}
+// Züge, die gerade zwischen Knivsta und Stockholm fahren: Mälartåg u. a. mit Ankunft in ≤ 30 min, Pendeltåg in ≤ 50 min
+async function pickList(tv) {
+  const now = Date.now(), tOf = a => new Date(realT(a) || a.AdvertisedTimeAtLocation);
+  const arrs = (tv.cands || []).filter(a => !a.TimeAtLocation &&
+    tOf(a) - now < (/pendelt/i.test(txt(a.ProductInformation).join(' ')) ? 50 : 30) * 60e3);
+  const ids = [...new Set(arrs.map(a => a.AdvertisedTrainIdent))];
+  if (!ids.length) return [];
+  const res = await postTA(() => [queryXml('TrainAnnouncement', `<AND>${eq('ActivityType', 'Avgang')}${eq('Advertised', 'true')}${anyOf('LocationSignature', ENDS)}${anyOf('AdvertisedTrainIdent', ids)}<GT name="AdvertisedTimeAtLocation" value="$dateadd(-02:00:00)"/><LT name="AdvertisedTimeAtLocation" value="$dateadd(00:15:00)"/></AND>`)]);
+  const deps = res[0].TrainAnnouncement || [], out = [], seen = new Set();
+  for (const a of arrs) {
+    // Abfahrt am jeweils anderen Ende, vor der Ankunft und schon erfolgt bzw. in den nächsten 5 min
+    const d = deps.find(x => x.AdvertisedTrainIdent === a.AdvertisedTrainIdent && isSthlm(a.LocationSignature) !== isSthlm(x.LocationSignature) &&
+      new Date(x.AdvertisedTimeAtLocation) < new Date(a.AdvertisedTimeAtLocation) && (x.TimeAtLocation || tOf(x) - now < 5 * 60e3));
+    if (!d || seen.has(a.AdvertisedTrainIdent)) continue;
+    seen.add(a.AdvertisedTrainIdent);
+    out.push({n: a.AdvertisedTrainIdent, prod: prodName(a), fromKn: d.LocationSignature === 'Kn', dep: d});
+  }
+  return out.sort((x, y) => tOf(x.dep) - tOf(y.dep));
 }
 async function pickTrain(n) {
   const tv = state.pick.tv;
